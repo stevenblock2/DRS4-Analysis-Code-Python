@@ -29,7 +29,7 @@ import tkinter as tk
 import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
-
+from histogrammar import *
 
 
 
@@ -92,7 +92,7 @@ def PulseHeightFinder(Y):
 #     else:
 #         return np.nan
 def hitfinder(Y):
-    NoiseSigma = 5
+    NoiseSigma = 1
     baseline = np.mean(Y[:20])
     noiserms = np.sqrt(np.mean(Y[:20]**2))
     p = scisig.savgol_filter(x=Y, window_length=13, polyorder=7)
@@ -141,6 +141,10 @@ def hitfinder(Y):
     hitEndIndex = 0
     hitStartIndex = 0
     hitPeakIndex = 0
+    eventNumber = 0
+    global SubDivider
+    global PersistanceData
+    global PersistanceTime
     for i in range(1, np.size(hitLogic)):
         if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
             hitAmplitude = 0
@@ -163,6 +167,9 @@ def hitfinder(Y):
             #print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
             #print(bool(hitStartIndex-hitEndIndex > 3))
             if hitEndIndex-hitStartIndex > 3 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
+                if eventNumber % SubDivider == 0:
+                    PersistanceData.append(Data)
+                    PersistanceTime.append(np.arange(0,1024)*.2)
                 hitStartIndexList = np.append(hitStartIndexList, hitStartIndex)
                 hitEndIndexList = np.append(hitEndIndexList,hitEndIndex)
                 hitPeakAmplitude = np.append(hitPeakAmplitude, hitAmplitude)
@@ -314,6 +321,9 @@ Data2 = pd.DataFrame()
 Data3 = pd.DataFrame()
 Data4 = pd.DataFrame()
 Divider = 1
+SubDivider = 100
+PersistanceData = []
+PersistanceTime = []
 with DRS4BinaryFile(FileName) as f:
     BoardID = f.board_ids[0]
     NumberofChannels = f.channels[BoardID]
@@ -381,11 +391,18 @@ Data.columns = columnNames
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
+
 histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
 
 plt.legend(PulseandNoiseColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
+
+histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
+plt.figure()
+for datum in PersistanceData:
+    plt.plot(datum)
+plt.title("Persistance Plot")
 Text = []
 if 1 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
