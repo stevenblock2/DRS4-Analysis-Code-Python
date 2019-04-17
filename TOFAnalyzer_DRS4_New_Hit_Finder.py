@@ -92,7 +92,7 @@ def PulseHeightFinder(Y):
 #     else:
 #         return np.nan
 def hitfinder(Y):
-    NoiseSigma = 2
+    NoiseSigma = 5
     baseline = np.mean(Y[:20])
     noiserms = np.sqrt(np.mean(Y[:20]**2))
     p = scisig.savgol_filter(x=Y, window_length=13, polyorder=7)
@@ -101,6 +101,10 @@ def hitfinder(Y):
     #plt.plot(Y)
     #plt.show()
     #print(baseline,NoiseSigma,abs(baseline) + NoiseSigma * noiserms)
+    p_diff = np.diff(p)
+    #1mV per tick = .001
+    #2mV per tick = .002
+    #etc...
     if abs(min(Y)) > abs(max(Y)):
         hitLogic = np.array([(True if pi < baseline - NoiseSigma * noiserms else False) for pi in p])
     else:
@@ -376,10 +380,11 @@ print(Data.head(30))
 Data.columns = columnNames
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
-histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
+PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
+histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
 
-plt.legend(PulseHeightColumns)
+plt.legend(PulseandNoiseColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 Text = []
 if 1 in NumberofChannels:
