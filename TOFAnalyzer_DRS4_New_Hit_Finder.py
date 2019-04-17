@@ -376,8 +376,9 @@ print(Data.head(30))
 Data.columns = columnNames
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
-histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions')
+histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
+
 plt.legend(PulseHeightColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 Text = []
