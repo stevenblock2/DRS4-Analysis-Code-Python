@@ -27,6 +27,7 @@ from math import *
 from tkinter.filedialog import askopenfilename
 import tkinter as tk
 import os
+import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
 
 
@@ -99,6 +100,71 @@ def PeakCalculation(X, Y):
         return riseTimeend
     else:
         return np.nan
+def hitfinder(Y):
+    NoiseSigma = 2
+    baseline = np.mean(Y[:20])
+    noiserms = np.sqrt(np.mean(Y[:20]**2))
+    p = scisig.savgol_filter(x=Y, window_length=13, polyorder=7)
+    durationTheshold=5
+    adjDurationThreshold=5
+    #plt.plot(Y)
+    #plt.show()
+    print(baseline,NoiseSigma,noiserms)
+    hitLogic = np.array([(True if abs(pi) > abs(baseline + NoiseSigma * noiserms) else False) for pi in p])
+    for i in range(1, np.size(hitLogic)):
+        if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
+            countDuration = 0
+            for j in range(i, np.size(hitLogic) - 1):
+                if hitLogic[j]:
+                    countDuration = countDuration + 1
+                if not hitLogic[j + 1]:
+                    break
+
+            if countDuration < durationTheshold:
+                for j in range(i, i + countDuration):
+                    hitLogic[j] = False
+    for i in range(1, np.size(hitLogic)):
+        if (hitLogic[i - 1] and (not hitLogic[i])) and (not hitLogic[i]):
+            countDuration = 0
+            for j in range(i, np.size(hitLogic) - 1):
+                if (not hitLogic[j]):
+                    countDuration = countDuration + 1
+                if hitLogic[j + 1]:
+                    break
+
+            if countDuration < adjDurationThreshold:
+                for j in range(i, i + countDuration):
+                    hitLogic[j] = True
+
+
+    hitStartIndexList = []
+    hitPeakAmplitude = []
+    hitPeakIndexArray = []
+    for i in range(1, np.size(hitLogic)):
+        if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
+            hitAmplitude = 1E100
+            hitPeakIndex = i
+            for j in range(i, np.size(hitLogic) - 1):
+                if p[j] < hitAmplitude:
+                    hitAmplitude = p[j]
+                    hitPeakIndex = j
+                if not hitLogic[j + 1]:
+                    break
+            ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
+
+            hitStartIndex = i
+            for j in range(hitPeakIndex, 0, -1):
+                if (p[j] <= ThresholdADC and p[j - 1] > ThresholdADC):
+                    hitStartIndex = j - 0.5
+                    break
+
+            hitStartIndexList = np.append(hitStartIndexList, hitStartIndex)
+            hitPeakAmplitude = np.append(hitPeakAmplitude, hitAmplitude)
+            hitPeakIndexArray = np.append(hitPeakIndexArray, hitPeakIndex)
+    print([hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, baseline, NoiseSigma])
+    return [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, hitLogic, baseline, NoiseSigma]
+
+
 def RisetimeFinder(X, Y):
     """
     Find peak location for proper interpolotion
@@ -217,8 +283,6 @@ with DRS4BinaryFile(FileName) as f:
     if len(NumberofChannels) > 1:
             ReferenceChannel = NumberofChannels[0]
             TimeWidths = f.time_widths[f.board_ids[0]][ReferenceChannel]
-
-
     Time = np.arange(0,1023)*.2
 
     eventNumber = 0
@@ -229,7 +293,8 @@ with DRS4BinaryFile(FileName) as f:
         triggerCell = event.trigger_cells[BoardID]
         for i in NumberofChannels:
             if (eventNumber % Divider == 0):
-                Data =  ADCData[BoardID][i]/65535 + RC*1000
+                Data =  ADCData[BoardID][i]/65535 + (RC*1000 - .5)
+                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, hitLogic, baseline, NoiseSigma] = hitfinder(Data)
                 if Peakfinder(Time,Data):
                     RiseTime = RisetimeFinder(Time,Data)
                     PulseHeight = PulseHeightFinder(Data)
