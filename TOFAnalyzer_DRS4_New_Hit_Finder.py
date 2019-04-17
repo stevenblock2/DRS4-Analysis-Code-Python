@@ -321,7 +321,7 @@ Data2 = pd.DataFrame()
 Data3 = pd.DataFrame()
 Data4 = pd.DataFrame()
 Divider = 1
-SubDivider = 100
+SubDivider = 1000
 PersistanceData = []
 PersistanceTime = []
 with DRS4BinaryFile(FileName) as f:
@@ -331,10 +331,10 @@ with DRS4BinaryFile(FileName) as f:
     if len(NumberofChannels) > 1:
             ReferenceChannel = NumberofChannels[0]
             TimeWidths = f.time_widths[f.board_ids[0]][ReferenceChannel]
-    Time = np.arange(0,1023)*.2
+    Time = np.arange(0,1024)*.2
 
     eventNumber = 0
-
+    plt.figure(1)
     for event in list(f):
         RC = event.range_center
         ADCData = event.adc_data
@@ -351,6 +351,11 @@ with DRS4BinaryFile(FileName) as f:
                         Charge = ChargeCalculator(Data,startIndex,EndIndex)
                         PeakTime =  Time[hitAmplitudeIndex]
                         TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise]})
+                        if eventNumber % SubDivider == 0:
+                            plt.plot(Time,Data,'k')
+                            plt.axvline(Time[startIndex],color = 'r',ymax = .5)
+                            plt.axvline(Time[hitAmplitudeIndex],color = 'g',ymax = .5)
+                            plt.axvline(Time[EndIndex],color = 'b',ymax = .5)
                         if i == 1:
                             Data1 = Data1.append(TempData,ignore_index=True)
                         if i == 2:
@@ -361,7 +366,7 @@ with DRS4BinaryFile(FileName) as f:
                             Data4 = Data4.append(TempData,ignore_index=True)
         eventNumber = eventNumber + 1
 columnNames = []
-
+plt.savefig(os.path.join(newDirectory,'Persistance.png'))
 for i in NumberofChannels:
     if i == NumberofChannels[0]:
         columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)]
@@ -398,10 +403,10 @@ plt.xlabel('Pulse Height (V)')
 plt.legend(PulseandNoiseColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
-histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
-plt.figure()
-for datum in PersistanceData:
-    plt.plot(datum)
+# histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
+# plt.figure()
+# for datum in PersistanceData:
+#     plt.plot(datum)
 plt.title("Persistance Plot")
 Text = []
 if 1 in NumberofChannels:
