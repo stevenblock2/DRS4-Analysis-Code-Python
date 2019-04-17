@@ -162,7 +162,7 @@ def Peakfinder(X,Y,*argv):
         MaxIndex = MaxIndex[0]
         MinIndex = MinIndex[0]
     #Pulses must be larger than 20 channels which is equivalent to 5mV, the location of the signal peak must also be between the max and min locations of the derivative of the waveform, with these values being above a threshold of 40 channels in a tick.
-    peakheight = .020
+    peakheight = .05
     primepeakheight = .002
     if (bool(abs(Y[MaxIndex] - mean) > peakheight) and bool(MaxIndex in range(YprimeMaxIndex,YprimeMinIndex)) and bool(abs(Yprime[YprimeMaxIndex]) > primepeakheight) and bool(abs(Yprime[YprimeMinIndex]) > primepeakheight)):
         MaxPeak = True
@@ -199,170 +199,104 @@ def reject_outliers(TimeDeltas,TimeRes, m):
     TimeRes = np.delete(TimeRes,Indexes)
     return TimeDeltas,TimeRes
 
-
+def ChargeCalculator(Y):
+    return np.trapz(Y,dx = .2E-9)
 
 
 FileName = askopenfilename(
     filetypes=[("Binary Files", "*.dat")])
+Data1 = pd.DataFrame()
+Data2 = pd.DataFrame()
+Data3 = pd.DataFrame()
+Data4 = pd.DataFrame()
+Divider = 1
 with DRS4BinaryFile(FileName) as f:
-    NumberofChannels = f.channels[f.board_ids[0]]
-
-    columnNames = []
-    nanarray = []
-    for i in NumberofChannels:
-        columnNames.append(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Pulse Time".format(i)])
-        nanarray.append(np.nan)
-        nanarray.append(np.nan)
-        nanarray.append(np.nan)
-    columnNames = [item for sublist in columnNames for item in sublist]
-    Data = pd.DataFrame(columns = columnNames)
-    #Iterate over data
-    TimeWidths1 = f.time_widths[f.board_ids[0]][1]
-    TimeWidths2 = f.time_widths[f.board_ids[0]][2]
-    TimeWidths3 = f.time_widths[f.board_ids[0]][3]
-    TimeWidths4 = f.time_widths[f.board_ids[0]][4]
-    Time1 = np.arange(0,1023)*.2
-    Time2 = np.arange(0,1023)*.2
-    Time3 = np.arange(0,1023)*.2
-    Time4 = np.arange(0,1023)*.2
-    eventNumber = 0
     BoardID = f.board_ids[0]
+    NumberofChannels = f.channels[BoardID]
+
+    if len(NumberofChannels) > 1:
+            ReferenceChannel = NumberofChannels[0]
+            TimeWidths = f.time_widths[f.board_ids[0]][ReferenceChannel]
+
+
+    Time = np.arange(0,1023)*.2
+
+    eventNumber = 0
+
     for event in list(f):
-        triggerCell = event.trigger_cells[BoardID]
         RC = event.range_center
         ADCData = event.adc_data
-        if (eventNumber % 1 == 0):
-            # for j in range(0,len(TimeWidths1)):
-            #         for i in range(0,j):
-            #             Time1[j] = Time1[j] + TimeWidths1[(i + triggerCell)%1024]
-            #             Time2[j] = Time2[j] + TimeWidths2[(i + triggerCell)%1024]
-            #             Time3[j] = Time3[j] + TimeWidths3[(i + triggerCell)%1024]
-            #             Time4[j] = Time4[j] + TimeWidths4[(i + triggerCell)%1024]
-            #
-
-            # TimeOffset1 = Time1[int(1024-triggerCell)%1024]
-            #
-            # Time2 = Time2 - (TimeOffset1-Time2[0])
-            # Time3 = Time3 - (TimeOffset1-Time3[0])
-            # Time4 = Time4 - (TimeOffset1-Time4[0])
-            RiseTime1,RiseTime2,RiseTime3,RiseTime4 = np.nan,np.nan,np.nan,np.nan
-            PulseHeight1,PulseHeight2,PulseHeight3,PulseHeight4 = np.nan,np.nan,np.nan,np.nan
-            PeakTime1,PeakTime2,PeakTime3,PeakTime4 = np.nan,np.nan,np.nan,np.nan
-            try:
-                Data1 =  ADCData[BoardID][1]/65535 + RC*1000
-
-                if Peakfinder(Time1,Data1):
-                    RiseTime1 = RisetimeFinder(Time1,Data1)
-                    PulseHeight1 = PulseHeightFinder(Data1)
-                    PeakTime1 =PeakCalculation(Time1,Data1)
-            except:
-                pass
-            try:
-                Data2 = ADCData[BoardID][2]/65535 + RC*1000
-                if Peakfinder(Time2,Data2):
-                    RiseTime2 = RisetimeFinder(Time2,Data2)
-                    PulseHeight2 = PulseHeightFinder(Data2)
-                    PeakTime2 =PeakCalculation(Time2,Data2)
-            except:
-                pass
-            try:
-
-                Data3 = ADCData[BoardID][3]/65535 + RC*1000
-
-                if Peakfinder(Time3,Data3):
-                    RiseTime3 = RisetimeFinder(Time3,Data3)
-                    PulseHeight3 = PulseHeightFinder(Data3)
-                    PeakTime3 =PeakCalculation(Time3,Data3)
-            except:
-                pass
-            try:
-
-                Data4 = ADCData[BoardID][4]/65535 + RC*1000
-                if Peakfinder(Time4,Data4):
-                    RiseTime4 = RisetimeFinder(Time4,Data4)
-                    PulseHeight4 = PulseHeightFinder(Data4)
-                    PeakTime4 =PeakCalculation(Time4,Data4)
-            except:
-                pass
-
-            Data.loc[eventNumber] = [RiseTime1,PulseHeight1,PeakTime1,RiseTime2,PulseHeight2,PeakTime2,RiseTime3,PulseHeight3,PeakTime3,RiseTime4,PulseHeight4,PeakTime4]
-
+        triggerCell = event.trigger_cells[BoardID]
+        for i in NumberofChannels:
+            if (eventNumber % Divider == 0):
+                Data =  ADCData[BoardID][i]/65535 + RC*1000
+                if Peakfinder(Time,Data):
+                    RiseTime = RisetimeFinder(Time,Data)
+                    PulseHeight = PulseHeightFinder(Data)
+                    Charge = ChargeCalculator(Data)
+                    PeakTime =PeakCalculation(Time,Data)
+                    TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime]})
+                    if i == 1:
+                        Data1 = Data1.append(TempData,ignore_index=True)
+                    if i == 2:
+                        Data2 = Data2.append(TempData,ignore_index=True)
+                    if i == 3:
+                        Data3 = Data3.append(TempData,ignore_index=True)
+                    if i == 4:
+                        Data4 = Data4.append(TempData,ignore_index=True)
         eventNumber = eventNumber + 1
-#PulseHeightColumns = columnNames[]
-histPulseHieghts = Data.plot.hist(y = ['Channel 1 Pulse Height','Channel 2 Pulse Height','Channel 3 Pulse Height','Channel 4 Pulse Height'],bins = 100,alpha = .3,subplots=False,title = 'Pulse Height Distributions')
+columnNames = []
+
+for i in NumberofChannels:
+    if i == NumberofChannels[0]:
+        columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i)]
+    else:
+        columnNames.append(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i)])
+
+if 1 == NumberofChannels[0]:
+    Data = Data1
+if 2 == NumberofChannels[0]:
+    Data = Data2
+if 3 == NumberofChannels[0]:
+    Data = Data3
+if 4 == NumberofChannels[0]:
+    Data = Data4
+
+
+if 1 in NumberofChannels and 1 != NumberofChannels[0]:
+    Data = pd.concat([Data,Data1],axis=1,ignore_index=True)
+if 2 in NumberofChannels and 2 != NumberofChannels[0]:
+    Data = pd.concat([Data,Data2],axis=1,ignore_index=True)
+if 3 in NumberofChannels and 3 != NumberofChannels[0]:
+    Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
+if 4 in NumberofChannels and 4 != NumberofChannels[0]:
+    Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
+
+Data.columns = columnNames
+print(columnNames)
+PulseHeightColumns = []
+PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
+print(PulseHeightColumns)
+histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins = 100,alpha = .3,subplots=False,title = 'Pulse Height Distributions')
 plt.xlabel('Pulse Height (V)')
 plt.legend(['Channel 1','Channel 2','Channel 3','Channel 4'])
 
 Text = []
-[ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
-Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(1,ToFMean,TofStd))
-
-[ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 2 Rise Time'].values,np.ones(len(Data.index)))
-Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(2,ToFMean,TofStd))
-
-[ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 3 Rise Time'].values,np.ones(len(Data.index)))
-Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(3,ToFMean,TofStd))
-
-[ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
-Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
-
-histRiseTimes = Data.plot.hist(y = ['Channel 1 Rise Time','Channel 2 Rise Time','Channel 3 Rise Time','Channel 4 Rise Time'],bins = 100,alpha = .3,subplots=False,title = 'Rise Time Distributions')
+if 1 in NumberofChannels:
+    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
+    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(1,ToFMean,TofStd))
+if 2 in NumberofChannels:
+    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 2 Rise Time'].values,np.ones(len(Data.index)))
+    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(2,ToFMean,TofStd))
+if 3 in NumberofChannels:
+    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 3 Rise Time'].values,np.ones(len(Data.index)))
+    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(3,ToFMean,TofStd))
+if 4 in NumberofChannels:
+    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
+    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
+ristimeColumns = [column for column in columnNames if "Rise Time" in column]
+histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 100,alpha = .3,subplots=False,title = 'Rise Time Distributions')
 plt.legend(Text)
 plt.xlabel('Rise Times (ns)')
 
-
-Text = []
-DataToF = Data[['Channel 1 Pulse Time','Channel 2 Pulse Time','Channel 3 Pulse Time','Channel 4 Pulse Time']]
-try:
-    DataToF = DataToF.assign(Delta12 = DataToF['Channel 1 Pulse Time'].values - DataToF['Channel 2 Pulse Time'].values)
-    [ToFMean, TofStd] = weighted_avg_and_std(DataToF['Delta12'].values,np.ones(len(DataToF.index)))
-    #print('Delta 12 Stats: \n Mean = {}\n Standard Deviation = {}'.format(ToFMean,TofStd))
-    Text.append(r'$\Delta_{}: \mu = {}ns; \sigma = {}ns$'.format({12},ToFMean,TofStd))
-except:
-    pass
-try:
-
-    DataToF = DataToF.assign(Delta13 = DataToF['Channel 1 Pulse Time'].values - DataToF['Channel 3 Pulse Time'].values)
-    [ToFMean, TofStd] = weighted_avg_and_std(DataToF['Delta13'].values,np.ones(len(DataToF.index)))
-    #print(r'$\Delta 13: \n \mu = {}ns \n \sigma = {}ns$'.format(ToFMean,TofStd))
-    Text.append(r'$\Delta_{}: \mu = {}ns; \sigma = {}ns$'.format({13},ToFMean,TofStd))
-except:
-    pass
-try:
-    DataToF = DataToF.assign(Delta14 =DataToF['Channel 1 Pulse Time'].values - DataToF['Channel 4 Pulse Time'].values)
-    [ToFMean, TofStd] = weighted_avg_and_std(DataToF['Delta14'].values,np.ones(len(DataToF.index)))
-    #print('Delta 14 Stats: \n Mean = {}\n Standard Deviation = {}'.format(ToFMean,TofStd))
-    Text.append(r'$\Delta_{}: \mu = {}ns; \sigma = {}ns$'.format({14},ToFMean,TofStd))
-except:
-    pass
-try:
-
-    DataToF = DataToF.assign(Delta23 =DataToF['Channel 2 Pulse Time'].values- DataToF['Channel 3 Pulse Time'].values)
-    [ToFMean, TofStd] = weighted_avg_and_std(DataToF['Delta23'].values,np.ones(len(DataToF.index)))
-    #print('Delta 23 Stats: \n Mean = {}\n Standard Deviation = {}'.format(ToFMean,TofStd))
-    Text.append(r'$\Delta_{}: \mu = {}ns; \sigma = {}ns$'.format({23},ToFMean,TofStd))
-except:
-    pass
-try:
-    DataToF = DataToF.assign(Delta24 =DataToF['Channel 2 Pulse Time'].values- DataToF['Channel 4 Pulse Time'].values)
-    [ToFMean, TofStd] = weighted_avg_and_std(DataToF['Delta24'].values,np.ones(len(DataToF.index)))
-    #print('Delta 24 Stats: \n Mean = {}\n Standard Deviation = {}'.format(ToFMean,TofStd))
-    Text.append(r'$\Delta_{}: \mu = {}ns; \sigma = {}ns$'.format({24},ToFMean,TofStd))
-
-except:
-    pass
-try:
-    DataToF = DataToF[['Delta12','Delta13','Delta14','Delta23','Delta24']]
-    HistToF = DataToF.plot.hist(bins = 100,alpha = .3,title = 'Time fo Flight Distributions')
-    plt.gca().legend(Text)
-
-    # build a rectangle in axes coords
-    left,right = plt.gca().get_xlim()
-    bottom,top = plt.gca().get_ylim()
-    #plt.text(left+.3,.9*top,Text)
-    plt.xlabel('Time of Flight (ns)')
-    plt.tight_layout()
-    #HistToF =
-except:
-    pass
 plt.show()
