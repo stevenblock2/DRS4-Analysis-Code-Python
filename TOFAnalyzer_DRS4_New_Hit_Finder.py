@@ -46,60 +46,51 @@ def weighted_avg_and_std(values, weights):
     return [np.round(average,3), np.round(std,3)]
 
 
-def Interpolator(X, Y, YValue, dTime, center):
+def Interpolator(X, Y, TimeleftIndex, TimeRightIndex,YValue):
     """
     Interpolate exact time Y == YValue using 4 points around closest data point to YValue
 
     Returns a tuple with time and error associated.
     """
-    if YValue > np.mean(Y[:25]):
-        TimeRightIndex = np.where(Y > YValue)[0][0] + 1
-        TimeleftIndex = TimeRightIndex - 3
-    else:
-        TimeRightIndex = np.where(Y < YValue)[0][0] + 1
-        TimeleftIndex= TimeRightIndex - 3
     Y1 = Y[TimeleftIndex]
     Y2 = Y[TimeRightIndex]
     X2 = X[TimeRightIndex]
     X1 = X[TimeleftIndex]
     slope = (Y2 - Y1) / (X2 - X1)
-    if slope != 0:
-        X0 = (YValue - Y1) / slope + X1
-    else:
-        X0 = np.nan
+    X0 = (YValue - Y1) / slope + X1
     return X0
 def PulseHeightFinder(Y):
     return max(abs(np.mean(Y[:20]) - Y))
 
-def PeakCalculation(X, Y):
-    """
-    Find peak location for proper interpolotion
-
-    Returns a returns time that waveform hit 40% of peak value
-    """
-    # Channel1Data is from first TOF
-    # Channel2Data is from second TOF
-    dTimes = X
-    # defines the positive or negative pulse and the correction to positive
-    Ymag = np.abs(Y - np.mean(Y[:25]))
-    index = np.where(Ymag == np.max(Ymag))[0][0]
-
-    if Y[index] < np.mean(Y[:25]):
-        YValue = np.min(Y)
-    else:
-        YValue = np.max(Y)
-    #YValueIndex = np.where(Yprime == YValue)[0][0]
-    if Y[index] < 0:
-        index = np.where(Y == np.min(Y))[0]
-        riseTimeend = Interpolator(
-            X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-    else:
-        riseTimeend = Interpolator(
-            X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
-    if riseTimeend > 65 and riseTimeend < 80:
-        return riseTimeend
-    else:
-        return np.nan
+# def PeakCalculation(X, Y):
+#     """
+#     Find peak location for proper interpolotion
+#
+#     Returns a returns time that waveform hit 40% of peak value
+#     """
+#     # Channel1Data is from first TOF
+#     # Channel2Data is from second TOF
+#     dTimes = X
+#     # defines the positive or negative pulse and the correction to positive
+#     Ymag = np.abs(Y - np.mean(Y[:25]))
+#     index = np.where(Ymag == np.max(Ymag))[0][0]
+#
+#     if Y[index] < np.mean(Y[:25]):
+#         YValue = np.min(Y)
+#     else:
+#         YValue = np.max(Y)
+#     #YValueIndex = np.where(Yprime == YValue)[0][0]
+#     if Y[index] < 0:
+#         index = np.where(Y == np.min(Y))[0]
+#         riseTimeend = Interpolator(
+#             X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
+#     else:
+#         riseTimeend = Interpolator(
+#             X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
+#     if riseTimeend > 65 and riseTimeend < 80:
+#         return riseTimeend
+#     else:
+#         return np.nan
 def hitfinder(Y):
     NoiseSigma = 2
     baseline = np.mean(Y[:20])
@@ -109,8 +100,11 @@ def hitfinder(Y):
     adjDurationThreshold=5
     #plt.plot(Y)
     #plt.show()
-    print(baseline,NoiseSigma,noiserms)
-    hitLogic = np.array([(True if abs(pi) > abs(baseline + NoiseSigma * noiserms) else False) for pi in p])
+    #print(baseline,NoiseSigma,abs(baseline) + NoiseSigma * noiserms)
+    if abs(min(Y)) > abs(max(Y)):
+        hitLogic = np.array([(True if pi < baseline - NoiseSigma * noiserms else False) for pi in p])
+    else:
+        hitLogic = np.array([(True if pi > baseline + NoiseSigma * noiserms else False) for pi in p])
     for i in range(1, np.size(hitLogic)):
         if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
             countDuration = 0
@@ -119,7 +113,6 @@ def hitfinder(Y):
                     countDuration = countDuration + 1
                 if not hitLogic[j + 1]:
                     break
-
             if countDuration < durationTheshold:
                 for j in range(i, i + countDuration):
                     hitLogic[j] = False
@@ -138,34 +131,57 @@ def hitfinder(Y):
 
 
     hitStartIndexList = []
+    hitEndIndexList = []
     hitPeakAmplitude = []
     hitPeakIndexArray = []
+    hitEndIndex = 0
+    hitStartIndex = 0
+    hitPeakIndex = 0
     for i in range(1, np.size(hitLogic)):
         if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
-            hitAmplitude = 1E100
+            hitAmplitude = 0
             hitPeakIndex = i
             for j in range(i, np.size(hitLogic) - 1):
-                if p[j] < hitAmplitude:
+                if abs(p[j]) > abs(hitAmplitude):
                     hitAmplitude = p[j]
                     hitPeakIndex = j
                 if not hitLogic[j + 1]:
                     break
             ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
-
             hitStartIndex = i
             for j in range(hitPeakIndex, 0, -1):
-                if (p[j] <= ThresholdADC and p[j - 1] > ThresholdADC):
-                    hitStartIndex = j - 0.5
+                if (abs(p[j]) >= ThresholdADC and abs(p[j - 1]) < ThresholdADC):
+                    hitStartIndex = int(j)
                     break
+            for j in range(hitPeakIndex,  np.size(hitLogic) - 1, 1):
+                if (abs(p[j]) <= ThresholdADC and abs(p[j - 1]) > ThresholdADC):
+                    hitEndIndex = int(j)
+            #print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
+            #print(bool(hitStartIndex-hitEndIndex > 3))
+            if hitEndIndex-hitStartIndex > 3 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
+                hitStartIndexList = np.append(hitStartIndexList, hitStartIndex)
+                hitEndIndexList = np.append(hitEndIndexList,hitEndIndex)
+                hitPeakAmplitude = np.append(hitPeakAmplitude, hitAmplitude)
+                hitPeakIndexArray = np.append(hitPeakIndexArray, hitPeakIndex)
+            i = hitEndIndex
+    #print([hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, baseline, NoiseSigma])
+    if len(hitPeakAmplitude) > 1:
+        minpeak = min(hitPeakAmplitude)
+        maxpeak = max(hitPeakAmplitude)
+        if abs(maxpeak) > abs(minpeak):
+            Indexes = np.nonzero(hitPeakAmplitude > 0)
+        else:
+            Indexes = np.nonzero(hitPeakAmplitude < 0)
 
-            hitStartIndexList = np.append(hitStartIndexList, hitStartIndex)
-            hitPeakAmplitude = np.append(hitPeakAmplitude, hitAmplitude)
-            hitPeakIndexArray = np.append(hitPeakIndexArray, hitPeakIndex)
-    print([hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, baseline, NoiseSigma])
-    return [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, hitLogic, baseline, NoiseSigma]
+        hitStartIndexList = hitStartIndexList[Indexes]
+        hitEndIndexList = hitEndIndexList[Indexes]
+        hitPeakAmplitude = hitPeakAmplitude[Indexes]
+        hitPeakIndexArray = hitPeakIndexArray[Indexes]
+
+    return [[int(x) for x in hitStartIndexList], hitPeakAmplitude, [int(x) for x in hitPeakIndexArray],[int(x) for x in hitEndIndexList], hitLogic, baseline, noiserms]
 
 
-def RisetimeFinder(X, Y):
+def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     """
     Find peak location for proper interpolotion
 
@@ -173,32 +189,44 @@ def RisetimeFinder(X, Y):
     """
     # Channel1Data is from first TOF
     # Channel2Data is from second TOF
-    dTimes = X
-    # defines the positive or negative pulse and the correction to positive
-    Ymag = np.abs(Y - np.mean(Y[:25]))
-    index = np.where(Ymag == np.max(Ymag))[0][0]
-
-    if Y[index] < np.mean(Y[:25]):
-        YValue = np.min(Y)
-    else:
-        YValue = np.max(Y)
-    #YValueIndex = np.where(Yprime == YValue)[0][0]
-    if Y[index] < 0:
-        index = np.where(Y == np.min(Y))[0]
-        riseTimeend = Interpolator(
-            X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-        riseTimestart = Interpolator(
-            X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-
-    else:
-        riseTimeend = Interpolator(
-            X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
-        riseTimestart = Interpolator(
-            X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, True)
-    if abs(riseTimeend-riseTimestart) < 4:
-        return abs(riseTimeend-riseTimestart)
-    else:
-        return np.nan
+    UpperThreshold = baseline - (.7 * (baseline - hitAmplitude))
+    LowerThreshold = baseline - (.3 * (baseline - hitAmplitude))
+    riseTimestart = 0
+    riseTimeend = 0
+    for i in range(peakIndex,startIndex-10,-1):
+        if abs(Y[i]) > UpperThreshold and abs(Y[i-1] <=UpperThreshold):
+            riseTimestart = Interpolator(X, Y, i-1,i,UpperThreshold)
+        if abs(Y[i]) > LowerThreshold and abs(Y[i-1] <=LowerThreshold):
+            riseTimeend = Interpolator(X, Y, i-1,i,LowerThreshold)
+        if riseTimestart and riseTimeend:
+            break
+    return riseTimestart-riseTimeend
+    # dTimes = X
+    # # defines the positive or negative pulse and the correction to positive
+    # Ymag = np.abs(Y - np.mean(Y[:25]))
+    # index = np.where(Ymag == np.max(Ymag))[0][0]
+    #
+    # if Y[index] < np.mean(Y[:25]):
+    #     YValue = np.min(Y)
+    # else:
+    #     YValue = np.max(Y)
+    # #YValueIndex = np.where(Yprime == YValue)[0][0]
+    # if Y[index] < 0:
+    #     index = np.where(Y == np.min(Y))[0]
+    #     riseTimeend = Interpolator(
+    #         X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
+    #     riseTimestart = Interpolator(
+    #         X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
+    #
+    # else:
+    #     riseTimeend = Interpolator(
+    #         X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
+    #     riseTimestart = Interpolator(
+    #         X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, True)
+    # if abs(riseTimeend-riseTimestart) < 4:
+    #     return abs(riseTimeend-riseTimestart)
+    # else:
+    #     return np.nan
 
 
 root = tk.Tk()
@@ -265,12 +293,18 @@ def reject_outliers(TimeDeltas,TimeRes, m):
     TimeRes = np.delete(TimeRes,Indexes)
     return TimeDeltas,TimeRes
 
-def ChargeCalculator(Y):
-    return np.trapz(Y,dx = .2E-9)
+def ChargeCalculator(Y,startIndex,EndIndex):
+    C = 40E-12
+    return np.trapz(Y[startIndex:EndIndex],dx = .2E-9)/C
 
 
 FileName = askopenfilename(
     filetypes=[("Binary Files", "*.dat")])
+directory = os.path.dirname(FileName)
+newDirectory = os.path.join(directory,FileName[:-4])
+if not os.path.exists(newDirectory):
+    os.mkdir(newDirectory)
+
 Data1 = pd.DataFrame()
 Data2 = pd.DataFrame()
 Data3 = pd.DataFrame()
@@ -294,29 +328,31 @@ with DRS4BinaryFile(FileName) as f:
         for i in NumberofChannels:
             if (eventNumber % Divider == 0):
                 Data =  ADCData[BoardID][i]/65535 + (RC*1000 - .5)
-                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray, hitLogic, baseline, NoiseSigma] = hitfinder(Data)
-                if Peakfinder(Time,Data):
-                    RiseTime = RisetimeFinder(Time,Data)
-                    PulseHeight = PulseHeightFinder(Data)
-                    Charge = ChargeCalculator(Data)
-                    PeakTime =PeakCalculation(Time,Data)
-                    TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime]})
-                    if i == 1:
-                        Data1 = Data1.append(TempData,ignore_index=True)
-                    if i == 2:
-                        Data2 = Data2.append(TempData,ignore_index=True)
-                    if i == 3:
-                        Data3 = Data3.append(TempData,ignore_index=True)
-                    if i == 4:
-                        Data4 = Data4.append(TempData,ignore_index=True)
+                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, hitLogic, baseline, rmsnoise] = hitfinder(Data)
+                if hitStartIndexList:
+                    for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
+                        print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
+                        RiseTime = RisetimeFinder(Time,Data,startIndex,EndIndex,baseline)
+                        PulseHeight = hitAmplitude
+                        Charge = ChargeCalculator(Data,startIndex,EndIndex)
+                        PeakTime =  Time[hitAmplitudeIndex]
+                        TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise]})
+                        if i == 1:
+                            Data1 = Data1.append(TempData,ignore_index=True)
+                        if i == 2:
+                            Data2 = Data2.append(TempData,ignore_index=True)
+                        if i == 3:
+                            Data3 = Data3.append(TempData,ignore_index=True)
+                        if i == 4:
+                            Data4 = Data4.append(TempData,ignore_index=True)
         eventNumber = eventNumber + 1
 columnNames = []
 
 for i in NumberofChannels:
     if i == NumberofChannels[0]:
-        columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i)]
+        columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)]
     else:
-        columnNames.append(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i)])
+        columnNames.append(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)])
 
 if 1 == NumberofChannels[0]:
     Data = Data1
@@ -336,16 +372,14 @@ if 3 in NumberofChannels and 3 != NumberofChannels[0]:
     Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
 if 4 in NumberofChannels and 4 != NumberofChannels[0]:
     Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
-
+print(Data.head(30))
 Data.columns = columnNames
-print(columnNames)
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
-print(PulseHeightColumns)
-histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins = 100,alpha = .3,subplots=False,title = 'Pulse Height Distributions')
+histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions')
 plt.xlabel('Pulse Height (V)')
-plt.legend(['Channel 1','Channel 2','Channel 3','Channel 4'])
-
+plt.legend(PulseHeightColumns)
+plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 Text = []
 if 1 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
@@ -360,8 +394,8 @@ if 4 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
     Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
 ristimeColumns = [column for column in columnNames if "Rise Time" in column]
-histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 100,alpha = .3,subplots=False,title = 'Rise Time Distributions')
+histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 500,alpha = .3,subplots=False,title = 'Rise Time Distributions')
 plt.legend(Text)
 plt.xlabel('Rise Times (ns)')
-
+plt.savefig(os.path.join(newDirectory,'Rise_Time_Distribution.png'))
 plt.show()
