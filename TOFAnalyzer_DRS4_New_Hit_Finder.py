@@ -29,7 +29,6 @@ import tkinter as tk
 import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
-from histogrammar import *
 
 
 
@@ -92,7 +91,7 @@ def PulseHeightFinder(Y):
 #     else:
 #         return np.nan
 def hitfinder(Y):
-    NoiseSigma = 1
+    NoiseSigma = 2
     baseline = np.mean(Y[:20])
     noiserms = np.sqrt(np.mean(Y[:20]**2))
     p = scisig.savgol_filter(x=Y, window_length=13, polyorder=7)
@@ -150,23 +149,26 @@ def hitfinder(Y):
             hitAmplitude = 0
             hitPeakIndex = i
             for j in range(i, np.size(hitLogic) - 1):
-                if abs(p[j]) > abs(hitAmplitude):
-                    hitAmplitude = p[j]
-                    hitPeakIndex = j
-                if not hitLogic[j + 1]:
-                    break
+                    if abs(p[j]) > abs(hitAmplitude):
+                        hitAmplitude = p[j]
+                        hitPeakIndex = j
+                    if not hitLogic[j + 1]:
+                        break
             ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
             hitStartIndex = i
             for j in range(hitPeakIndex, 0, -1):
-                if (abs(p[j]) >= ThresholdADC and abs(p[j - 1]) < ThresholdADC):
+                if (abs(p[j]) >= abs(ThresholdADC) and abs(p[j - 1]) < abs(ThresholdADC)):
                     hitStartIndex = int(j)
                     break
             for j in range(hitPeakIndex,  np.size(hitLogic) - 1, 1):
-                if (abs(p[j]) <= ThresholdADC and abs(p[j - 1]) > ThresholdADC):
+                if (abs(p[j]) <= abs(ThresholdADC) and abs(p[j - 1]) > abs(ThresholdADC)):
                     hitEndIndex = int(j)
-            #print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
+                if not hitLogic[j + 1]:
+                    hitEndIndex = int(j)
+                    break
+            print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
             #print(bool(hitStartIndex-hitEndIndex > 3))
-            if hitEndIndex-hitStartIndex > 3 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
+            if abs(hitEndIndex-hitStartIndex) > 3 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
                 if eventNumber % SubDivider == 0:
                     PersistanceData.append(Data)
                     PersistanceTime.append(np.arange(0,1024)*.2)
@@ -306,7 +308,7 @@ def reject_outliers(TimeDeltas,TimeRes, m):
 
 def ChargeCalculator(Y,startIndex,EndIndex):
     C = 40E-12
-    return np.trapz(Y[startIndex:EndIndex],dx = .2E-9)/C
+    return np.trapz(Y[startIndex-5:EndIndex+5],dx = .2E-9)
 
 
 FileName = askopenfilename(
@@ -353,9 +355,9 @@ with DRS4BinaryFile(FileName) as f:
                         TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise]})
                         if eventNumber % SubDivider == 0:
                             plt.plot(Time,Data,'k')
-                            plt.axvline(Time[startIndex],color = 'r',ymax = .5)
-                            plt.axvline(Time[hitAmplitudeIndex],color = 'g',ymax = .5)
-                            plt.axvline(Time[EndIndex],color = 'b',ymax = .5)
+                            plt.axvline(Time[startIndex],color = 'r',ymax = 1,linewidth=.2)
+                            plt.axvline(Time[hitAmplitudeIndex],color = 'g',ymax = 1,linewidth=.2)
+                            plt.axvline(Time[EndIndex],color = 'b',ymax = 1,linewidth=.2)
                         if i == 1:
                             Data1 = Data1.append(TempData,ignore_index=True)
                         if i == 2:
@@ -396,18 +398,24 @@ Data.columns = columnNames
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
+ChargeColumns = [column for column in columnNames if "Charge" in column]
 
-histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =500,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
+histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
 
 plt.legend(PulseandNoiseColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
+histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
+plt.xlabel('Area (V*s)')
+
+plt.legend(ChargeColumns)
+plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 # histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
 # plt.figure()
 # for datum in PersistanceData:
 #     plt.plot(datum)
-plt.title("Persistance Plot")
+#plt.title("Persistance Plot")
 Text = []
 if 1 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
@@ -422,7 +430,7 @@ if 4 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
     Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
 ristimeColumns = [column for column in columnNames if "Rise Time" in column]
-histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 500,alpha = .3,subplots=False,title = 'Rise Time Distributions')
+histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 1000,alpha = .3,subplots=False,title = 'Rise Time Distributions')
 plt.legend(Text)
 plt.xlabel('Rise Times (ns)')
 plt.savefig(os.path.join(newDirectory,'Rise_Time_Distribution.png'))
