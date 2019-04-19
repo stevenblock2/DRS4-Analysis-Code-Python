@@ -29,6 +29,7 @@ import tkinter as tk
 import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
+import scipy
 
 
 
@@ -91,10 +92,14 @@ def PulseHeightFinder(Y):
 #     else:
 #         return np.nan
 def hitfinder(Y):
-    NoiseSigma = 2
-    baseline = np.mean(Y[:20])
-    noiserms = np.sqrt(np.mean(Y[:20]**2))
-    p = scisig.savgol_filter(x=Y, window_length=13, polyorder=7)
+    NoiseSigma = 1
+    baseline = np.mean(Y[:50])
+    noiserms = np.abs(Y - np.median(Y))
+    mdev = np.median(noiserms)
+    s = noiserms / mdev if mdev else 0.
+    noiserms = np.std(Y[s < 2])**2
+    #noiserms = np.std(Y[:50])**2
+    p = scisig.savgol_filter(x=Y, window_length=33, polyorder=7)
     durationTheshold=5
     adjDurationThreshold=5
     #plt.plot(Y)
@@ -104,6 +109,7 @@ def hitfinder(Y):
     #1mV per tick = .001
     #2mV per tick = .002
     #etc...
+
     if abs(min(Y)) > abs(max(Y)):
         hitLogic = np.array([(True if pi < baseline - NoiseSigma * noiserms else False) for pi in p])
     else:
@@ -144,6 +150,7 @@ def hitfinder(Y):
     global SubDivider
     global PersistanceData
     global PersistanceTime
+
     for i in range(1, np.size(hitLogic)):
         if ((not hitLogic[i - 1]) and hitLogic[i]) and hitLogic[i]:
             hitAmplitude = 0
@@ -161,9 +168,7 @@ def hitfinder(Y):
                     hitStartIndex = int(j)
                     break
             for j in range(hitPeakIndex,  np.size(hitLogic) - 1, 1):
-                if (abs(p[j]) <= abs(ThresholdADC) and abs(p[j - 1]) > abs(ThresholdADC)):
-                    hitEndIndex = int(j)
-                if not hitLogic[j + 1]:
+                if not hitLogic[j]:
                     hitEndIndex = int(j)
                     break
             print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
@@ -244,7 +249,18 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
 
 root = tk.Tk()
 root.withdraw()
-
+def Lowpass(Y):
+    CutoffFreq = 5000
+    pedestle = list(Y[:50])
+    pedestle.extend(np.zeros(len(Y)-50))
+    fftpedestle= scipy.fft(pedestle)# (G) and (H)
+    fft= scipy.fft(Y)
+    newfft = fft-fftpedestle
+    bp=newfft[:]
+    # for i in range(len(bp)): # (H-red)
+    #     if i>=CutoffFreq:bp[i]=0
+    ibp=scipy.ifft(bp) # (I), (J), (K) and (L)
+    return ibp
 def Peakfinder(X,Y,*argv):
     """
     Peak Finding function that tells code whether a peak exists in the waveform.
@@ -343,9 +359,12 @@ with DRS4BinaryFile(FileName) as f:
         triggerCell = event.trigger_cells[BoardID]
         for i in NumberofChannels:
             if (eventNumber % Divider == 0):
-                Data =  ADCData[BoardID][i]/65535 + (RC*1000 - .5)
+                Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
                 [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, hitLogic, baseline, rmsnoise] = hitfinder(Data)
                 if hitStartIndexList:
+                    # plt.plot(Data)
+                    # plt.plot(scisig.savgol_filter(x=Data, window_length=33, polyorder=7))
+                    # plt.show()
                     for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
                         print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
                         RiseTime = RisetimeFinder(Time,Data,startIndex,EndIndex,baseline)
@@ -373,7 +392,7 @@ for i in NumberofChannels:
     if i == NumberofChannels[0]:
         columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)]
     else:
-        columnNames.append(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)])
+        columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i)])
 
 if 1 == NumberofChannels[0]:
     Data = Data1
@@ -393,8 +412,8 @@ if 3 in NumberofChannels and 3 != NumberofChannels[0]:
     Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
 if 4 in NumberofChannels and 4 != NumberofChannels[0]:
     Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
-print(Data.head(30))
-Data.columns = columnNames
+print(Data.head(30),[e for e in columnNames if 'Channel' in e])
+Data.columns = [e for e in columnNames if 'Channel' in e]
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
@@ -408,7 +427,11 @@ plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
 histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
 plt.xlabel('Area (V*s)')
+plt.legend(ChargeColumns)
+plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 
+NhistCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
+plt.xlabel('Area (V*s)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 # histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
