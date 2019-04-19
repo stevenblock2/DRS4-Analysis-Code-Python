@@ -30,9 +30,29 @@ import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
 import scipy
+from time import sleep
 
 
-
+# Print iterations progress
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
+    """
+    Call in a loop to create terminal progress bar
+    @params:
+        iteration   - Required  : current iteration (Int)
+        total       - Required  : total iterations (Int)
+        prefix      - Optional  : prefix string (Str)
+        suffix      - Optional  : suffix string (Str)
+        decimals    - Optional  : positive number of decimals in percent complete (Int)
+        length      - Optional  : character length of bar (Int)
+        fill        - Optional  : bar fill character (Str)
+    """
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + '-' * (length - filledLength)
+    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = '\r')
+    # Print New Line on Complete
+    if iteration == total:
+        print()
 
 def weighted_avg_and_std(values, weights):
     """
@@ -57,49 +77,24 @@ def Interpolator(X, Y, TimeleftIndex, TimeRightIndex,YValue):
     X2 = X[TimeRightIndex]
     X1 = X[TimeleftIndex]
     slope = (Y2 - Y1) / (X2 - X1)
-    X0 = (YValue - Y1) / slope + X1
-    return X0
+    if slope != 0:
+        X0 = (YValue - Y1) / slope + X1
+        return X0
+    else:
+        return 0
 def PulseHeightFinder(Y):
     return max(abs(np.mean(Y[:20]) - Y))
 
-# def PeakCalculation(X, Y):
-#     """
-#     Find peak location for proper interpolotion
-#
-#     Returns a returns time that waveform hit 40% of peak value
-#     """
-#     # Channel1Data is from first TOF
-#     # Channel2Data is from second TOF
-#     dTimes = X
-#     # defines the positive or negative pulse and the correction to positive
-#     Ymag = np.abs(Y - np.mean(Y[:25]))
-#     index = np.where(Ymag == np.max(Ymag))[0][0]
-#
-#     if Y[index] < np.mean(Y[:25]):
-#         YValue = np.min(Y)
-#     else:
-#         YValue = np.max(Y)
-#     #YValueIndex = np.where(Yprime == YValue)[0][0]
-#     if Y[index] < 0:
-#         index = np.where(Y == np.min(Y))[0]
-#         riseTimeend = Interpolator(
-#             X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-#     else:
-#         riseTimeend = Interpolator(
-#             X, Y, .4*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
-#     if riseTimeend > 65 and riseTimeend < 80:
-#         return riseTimeend
-#     else:
-#         return np.nan
 def hitfinder(Y):
-    NoiseSigma = 1
-    baseline = np.mean(Y[:50])
-    noiserms = np.abs(Y - np.median(Y))
+
+    #noiserms = np.std(Y[:50])**2
+    p = scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
+    NoiseSigma = 3
+    baseline = np.mean(p[:50])
+    noiserms = np.abs(p - np.median(p))
     mdev = np.median(noiserms)
     s = noiserms / mdev if mdev else 0.
-    noiserms = np.std(Y[s < 2])**2
-    #noiserms = np.std(Y[:50])**2
-    p = scisig.savgol_filter(x=Y, window_length=33, polyorder=7)
+    noiserms = np.std(p[s < 2])**2
     durationTheshold=5
     adjDurationThreshold=5
     #plt.plot(Y)
@@ -171,9 +166,9 @@ def hitfinder(Y):
                 if not hitLogic[j]:
                     hitEndIndex = int(j)
                     break
-            print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
+            #print(hitStartIndex,hitEndIndex,hitPeakIndex,hitAmplitude)
             #print(bool(hitStartIndex-hitEndIndex > 3))
-            if abs(hitEndIndex-hitStartIndex) > 3 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
+            if abs(hitEndIndex-hitStartIndex) > 10 and abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and hitPeakIndex !=0 and hitEndIndex < 1023 and hitPeakIndex < hitEndIndex and hitPeakIndex > hitStartIndex:
                 if eventNumber % SubDivider == 0:
                     PersistanceData.append(Data)
                     PersistanceTime.append(np.arange(0,1024)*.2)
@@ -213,38 +208,13 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     riseTimeend = 0
     for i in range(peakIndex,startIndex-10,-1):
         if abs(Y[i]) > UpperThreshold and abs(Y[i-1] <=UpperThreshold):
-            riseTimestart = Interpolator(X, Y, i-1,i,UpperThreshold)
+            riseTimestart = Interpolator(X, Y, i-2,i,UpperThreshold)
         if abs(Y[i]) > LowerThreshold and abs(Y[i-1] <=LowerThreshold):
-            riseTimeend = Interpolator(X, Y, i-1,i,LowerThreshold)
-        if riseTimestart and riseTimeend:
+            riseTimeend = Interpolator(X, Y, i-2,i,LowerThreshold)
+        if riseTimestart and riseTimeend and riseTimestart != riseTimeend:
             break
     return riseTimestart-riseTimeend
-    # dTimes = X
-    # # defines the positive or negative pulse and the correction to positive
-    # Ymag = np.abs(Y - np.mean(Y[:25]))
-    # index = np.where(Ymag == np.max(Ymag))[0][0]
-    #
-    # if Y[index] < np.mean(Y[:25]):
-    #     YValue = np.min(Y)
-    # else:
-    #     YValue = np.max(Y)
-    # #YValueIndex = np.where(Yprime == YValue)[0][0]
-    # if Y[index] < 0:
-    #     index = np.where(Y == np.min(Y))[0]
-    #     riseTimeend = Interpolator(
-    #         X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-    #     riseTimestart = Interpolator(
-    #         X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, False)
-    #
-    # else:
-    #     riseTimeend = Interpolator(
-    #         X, Y, .1*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]) , dTimes, True)
-    #     riseTimestart = Interpolator(
-    #         X, Y, .9*(Y[index]-np.mean(Y[:25])) + np.mean(Y[:25]), dTimes, True)
-    # if abs(riseTimeend-riseTimestart) < 4:
-    #     return abs(riseTimeend-riseTimestart)
-    # else:
-    #     return np.nan
+
 
 
 root = tk.Tk()
@@ -261,50 +231,6 @@ def Lowpass(Y):
     #     if i>=CutoffFreq:bp[i]=0
     ibp=scipy.ifft(bp) # (I), (J), (K) and (L)
     return ibp
-def Peakfinder(X,Y,*argv):
-    """
-    Peak Finding function that tells code whether a peak exists in the waveform.
-
-    Returns a boolean stating existance of peak that satisfies hardcoded requirements.
-    """
-    mean = np.mean(Y[:25])
-    MaxPeak = False
-    MinPeak = False
-    Max = np.max(Y)
-    MaxIndex = np.where(Y==Max)[0]
-    Min = np.min(Y)
-    MinIndex = np.where(Y==Min)[0]
-    Yprime = np.diff(Y)
-    YprimeMax = np.max(Yprime)
-    YprimeMin = np.min(Yprime)
-    YprimeMaxIndex = np.where(Yprime == YprimeMax)[0][0]
-    YprimeMinIndex = np.where(Yprime == YprimeMin)[0][0]
-    if len(MaxIndex) > 1 or len(MinIndex) > 1: #Pulses left range of the ADC -> not all data is present
-        return False
-    else:
-        MaxIndex = MaxIndex[0]
-        MinIndex = MinIndex[0]
-    #Pulses must be larger than 20 channels which is equivalent to 5mV, the location of the signal peak must also be between the max and min locations of the derivative of the waveform, with these values being above a threshold of 40 channels in a tick.
-    peakheight = .05
-    primepeakheight = .002
-    if (bool(abs(Y[MaxIndex] - mean) > peakheight) and bool(MaxIndex in range(YprimeMaxIndex,YprimeMinIndex)) and bool(abs(Yprime[YprimeMaxIndex]) > primepeakheight) and bool(abs(Yprime[YprimeMinIndex]) > primepeakheight)):
-        MaxPeak = True
-    else:
-        MaxPeak = False
-
-    if (bool(abs(Y[MinIndex] - mean) > peakheight) and bool(MinIndex in range(YprimeMinIndex,YprimeMaxIndex)) and bool(abs(Yprime[YprimeMaxIndex]) > primepeakheight) and bool(abs(Yprime[YprimeMinIndex]) > primepeakheight)):
-        MinPeak = True
-    else:
-        MinPeak = False
-
-    if MaxPeak and MinPeak: #If there are both positive an negative peaks which match all criteria, the signal is not considered stable and is ignored
-        return False
-    elif MaxPeak or MinPeak:
-        #print('Signal Found in Event {}!'.format(argv[0]))
-        return True
-    else:
-        return False
-
 
 
 def reject_outliers(TimeDeltas,TimeRes, m):
@@ -342,7 +268,10 @@ Divider = 1
 SubDivider = 1000
 PersistanceData = []
 PersistanceTime = []
+with DRS4BinaryFile(FileName) as events:
+    length = len(list(events))
 with DRS4BinaryFile(FileName) as f:
+
     BoardID = f.board_ids[0]
     NumberofChannels = f.channels[BoardID]
 
@@ -353,7 +282,9 @@ with DRS4BinaryFile(FileName) as f:
 
     eventNumber = 0
     plt.figure(1)
+    printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
     for event in list(f):
+
         RC = event.range_center
         ADCData = event.adc_data
         triggerCell = event.trigger_cells[BoardID]
@@ -362,11 +293,13 @@ with DRS4BinaryFile(FileName) as f:
                 Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
                 [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, hitLogic, baseline, rmsnoise] = hitfinder(Data)
                 if hitStartIndexList:
+
                     # plt.plot(Data)
                     # plt.plot(scisig.savgol_filter(x=Data, window_length=33, polyorder=7))
                     # plt.show()
                     for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
-                        print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
+
+                        #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
                         RiseTime = RisetimeFinder(Time,Data,startIndex,EndIndex,baseline)
                         PulseHeight = hitAmplitude
                         Charge = ChargeCalculator(Data,startIndex,EndIndex)
@@ -385,6 +318,8 @@ with DRS4BinaryFile(FileName) as f:
                             Data3 = Data3.append(TempData,ignore_index=True)
                         if i == 4:
                             Data4 = Data4.append(TempData,ignore_index=True)
+        #sleep(0.001)
+        printProgressBar(eventNumber + 1, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
         eventNumber = eventNumber + 1
 columnNames = []
 plt.savefig(os.path.join(newDirectory,'Persistance.png'))
@@ -430,15 +365,7 @@ plt.xlabel('Area (V*s)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 
-NhistCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
-plt.xlabel('Area (V*s)')
-plt.legend(ChargeColumns)
-plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-# histogram = Bin(1024, 0, 1023,quantity=lambda datum: datum[0], value= Bin(5000, -5., .5, lambda datum: datum[1]))
-# plt.figure()
-# for datum in PersistanceData:
-#     plt.plot(datum)
-#plt.title("Persistance Plot")
+
 Text = []
 if 1 in NumberofChannels:
     [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
