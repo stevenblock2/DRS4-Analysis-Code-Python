@@ -31,7 +31,7 @@ import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
 import scipy
 from time import sleep
-
+from lmfit.models import GaussianModel
 
 # Print iterations progress
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
@@ -349,21 +349,70 @@ if 4 in NumberofChannels and 4 != NumberofChannels[0]:
     Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
 print(Data.head(30),[e for e in columnNames if 'Channel' in e])
 Data.columns = [e for e in columnNames if 'Channel' in e]
+
+def fit_function(x,A1,mu1,sigma1,A2,mu2,sigma2,A3,mu3,sigma3):
+    return (A1*np.exp(-1.0 * (x - mu1)**2 / (2 * sigma1**2))+A2*np.exp(-1.0 * (x - mu2)**2 / (2 * sigma2**2))+A3*np.exp(-1.0 * (x - mu3)**2 / (2 * sigma3**2)))
+
+
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
 ChargeColumns = [column for column in columnNames if "Charge" in column]
-
-histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
+plt.figure()
+histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
 
-plt.legend(PulseandNoiseColumns)
+def get_hist(ax):
+    n,bins = [],[]
+    for rect in ax.patches:
+        ((x0, y0), (x1, y1)) = rect.get_bbox().get_points()
+        n.append(y1-y0)
+        bins.append(x0) # left edge of each bin
+    bins.append(x1) # also get right edge of last bin
+
+    return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
+
+n, bins = get_hist(histPulseHieghts)
+
+bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
+print(n.dtype,bincenters.dtype)
+gauss1 = GaussianModel(prefix='g1_')
+pars = gauss1.make_params()
+
+pars['g1_center'].set(0, min=-.5, max=.5)
+pars['g1_sigma'].set(.01, min=.001)
+pars['g1_amplitude'].set(2000, min=10)
+
+gauss2 = GaussianModel(prefix='g2_')
+
+pars.update(gauss2.make_params())
+
+pars['g2_center'].set(0, min=-.5, max=.5)
+pars['g2_sigma'].set(.01, min=.001)
+pars['g2_amplitude'].set(2000, min=10)
+
+gauss3 = GaussianModel(prefix='g3_')
+
+pars.update(gauss3.make_params())
+
+pars['g3_center'].set(0, min=-.5, max=.5)
+pars['g3_sigma'].set(.01, min=.001)
+pars['g3_amplitude'].set(2000, min=10)
+
+mod = gauss1 + gauss2 + gauss3
+
+init = mod.eval(pars, x=bincenters)
+out = mod.fit(n, pars, x=bincenters)
+
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
 histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
 plt.xlabel('Area (V*s)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
+
+
+
 
 
 Text = []
