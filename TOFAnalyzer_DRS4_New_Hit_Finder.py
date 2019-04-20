@@ -85,8 +85,42 @@ def Interpolator(X, Y, TimeleftIndex, TimeRightIndex,YValue):
 def PulseHeightFinder(Y):
     return max(abs(np.mean(Y[:20]) - Y))
 
-def hitfinder(Y):
 
+def hifinderScipy(Y):
+    p = scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
+    NoiseSigma = 5
+    baseline = np.mean(p[:50])
+    noiserms = np.std(p[:50])
+    hitStartIndexList = []
+    hitEndIndexList = []
+    hitPeakAmplitude = []
+    hitPeakIndexArray = []
+    Max = abs(max(p))
+    Min = abs(min(p))
+    if Max > Min:
+        peaks, properties = scipy.signal.find_peaks(p, prominence=.004, width=6,height = NoiseSigma*noiserms)
+        # plt.plot(Y)
+        # plt.fill_between(np.arange(0,1024),y1 = - NoiseSigma*noiserms,y2 =  NoiseSigma*noiserms,alpha = .1)
+        # plt.show()
+    else:
+        peaks, properties = scipy.signal.find_peaks(-p, prominence=.004, width=6,height = NoiseSigma*noiserms)
+
+    for (peak,width) in zip(peaks,properties['widths']):
+        hitAmplitude = p[peak]
+        #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
+        hitEndIndex = peak + int(1.2*width/2)
+        hitStartIndex = peak - int(1.2*width/2)
+        if abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex:
+            if eventNumber % SubDivider == 0:
+                PersistanceData.append(Data)
+                PersistanceTime.append(np.arange(0,1024)*.2)
+            hitStartIndexList = np.append(hitStartIndexList, hitStartIndex)
+            hitEndIndexList = np.append(hitEndIndexList,hitEndIndex)
+            hitPeakAmplitude = np.append(hitPeakAmplitude, hitAmplitude)
+            hitPeakIndexArray = np.append(hitPeakIndexArray, peak)
+
+    return [[int(x) for x in hitStartIndexList], hitPeakAmplitude, [int(x) for x in hitPeakIndexArray],[int(x) for x in hitEndIndexList], baseline, noiserms]
+def hitfinder(Y):
     #noiserms = np.std(Y[:50])**2
     p = scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
     NoiseSigma = 3
@@ -191,7 +225,7 @@ def hitfinder(Y):
         hitPeakAmplitude = hitPeakAmplitude[Indexes]
         hitPeakIndexArray = hitPeakIndexArray[Indexes]
 
-    return [[int(x) for x in hitStartIndexList], hitPeakAmplitude, [int(x) for x in hitPeakIndexArray],[int(x) for x in hitEndIndexList], hitLogic, baseline, noiserms]
+    return [[int(x) for x in hitStartIndexList], hitPeakAmplitude, [int(x) for x in hitPeakIndexArray],[int(x) for x in hitEndIndexList],  baseline, noiserms]
 
 
 def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
@@ -304,7 +338,7 @@ with DRS4BinaryFile(FileName) as f:
         for i in NumberofChannels:
             if (eventNumber % Divider == 0):
                 Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
-                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, hitLogic, baseline, rmsnoise] = hitfinder(Data)
+                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, baseline, rmsnoise] = hifinderScipy(Data) #hitfinder(Data)
                 if hitStartIndexList:
 
                     # plt.plot(Data)
@@ -367,11 +401,11 @@ PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
 ChargeColumns = [column for column in columnNames if "Charge" in column]
-histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
+histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
 plt.xlabel('Pulse Height (V)')
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
-histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
+histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
 plt.xlabel('Area (V*s)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
