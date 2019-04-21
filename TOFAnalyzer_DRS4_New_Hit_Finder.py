@@ -29,6 +29,7 @@ import tkinter as tk
 import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
+from scipy import stats
 import scipy
 from time import sleep
 from lmfit.models import GaussianModel
@@ -84,10 +85,11 @@ def Interpolator(X, Y, TimeleftIndex, TimeRightIndex,YValue):
         return 0
 def PulseHeightFinder(Y):
     return max(abs(np.mean(Y[:20]) - Y))
+def filterData(Y):
+    return scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
 
-
-def hifinderScipy(Y):
-    p = scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
+def hifinderScipy(p):
+    #p = filterData(Y)
     NoiseSigma = 5
     baseline = np.mean(p[:50])
     noiserms = np.std(p[:50])
@@ -98,18 +100,18 @@ def hifinderScipy(Y):
     Max = abs(max(p))
     Min = abs(min(p))
     if Max > Min:
-        peaks, properties = scipy.signal.find_peaks(p, prominence=.004, width=6,height = NoiseSigma*noiserms)
+        peaks, properties = scipy.signal.find_peaks(p, prominence=.004, width=6,height = abs(NoiseSigma*noiserms))
         # plt.plot(Y)
         # plt.fill_between(np.arange(0,1024),y1 = - NoiseSigma*noiserms,y2 =  NoiseSigma*noiserms,alpha = .1)
         # plt.show()
     else:
-        peaks, properties = scipy.signal.find_peaks(-p, prominence=.004, width=6,height = NoiseSigma*noiserms)
+        peaks, properties = scipy.signal.find_peaks(-p, prominence=.004, width=6,height = abs(NoiseSigma*noiserms))
 
     for (peak,width) in zip(peaks,properties['widths']):
         hitAmplitude = p[peak]
         #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
-        hitEndIndex = peak + int(1.2*width/2)
-        hitStartIndex = peak - int(1.2*width/2)
+        hitEndIndex = peak + int(width)
+        hitStartIndex = peak - int(width)
         if abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex:
             if eventNumber % SubDivider == 0:
                 PersistanceData.append(Data)
@@ -240,13 +242,34 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     LowerThreshold = baseline - (.3 * (baseline - hitAmplitude))
     riseTimestart = 0
     riseTimeend = 0
-    for i in range(peakIndex,startIndex-10,-1):
-        if abs(Y[i]) > UpperThreshold and abs(Y[i-1] <=UpperThreshold):
-            riseTimestart = Interpolator(X, Y, i-2,i,UpperThreshold)
-        if abs(Y[i]) > LowerThreshold and abs(Y[i-1] <=LowerThreshold):
-            riseTimeend = Interpolator(X, Y, i-2,i,LowerThreshold)
-        if riseTimestart and riseTimeend and riseTimestart != riseTimeend:
-            break
+    riseIndex = 0
+    fallIndex = 0
+    diffs = Y[startIndex:peakIndex]-UpperThreshold
+    value = np.min(abs(diffs))
+    #print(value,diffs)
+    #print(np.where(value == abs(diffs))[0][0])
+    riseIndex = int(np.where(value == abs(diffs))[0][0]) + startIndex
+    diffs = Y[startIndex:peakIndex]-LowerThreshold
+    value = np.min(abs(diffs))
+    fallIndex =  int(np.where(value == abs(diffs))[0][0]) + startIndex
+    # plt.plot(X,Y)
+    # plt.axvline(x = X[riseIndex],color = 'r')
+    # plt.axvline(x = X[peakIndex],color = 'g')
+    # plt.axvline(x = X[startIndex],color = 'b')
+    # plt.show()
+    riseTimestart = Interpolator(X, Y, riseIndex-1,riseIndex+1,UpperThreshold)
+    riseTimeend = Interpolator(X, Y, fallIndex-1,fallIndex+1,LowerThreshold)
+    # for i in range(peakIndex,startIndex,-1):
+    #     if abs(Y[i]) > abs(UpperThreshold) and abs(Y[i-1] <=abs(UpperThreshold)):
+    #         riseIndex = i
+    #         riseTimestart = Interpolator(X, Y, i-1,i,abs(UpperThreshold))
+    #         break
+    # for i in range(riseIndex-1,startIndex,-1):
+    #     if abs(Y[i]) < abs(LowerThreshold) and abs(Y[i+1] >=abs(LowerThreshold)):
+    #         fallIndex = i
+    #         riseTimeend = Interpolator(X, Y, i,i+1,abs(LowerThreshold))
+    #         break
+    #print(startIndex,peakIndex,riseIndex,fallIndex)
     return riseTimestart-riseTimeend
 
 
@@ -338,16 +361,15 @@ with DRS4BinaryFile(FileName) as f:
         for i in NumberofChannels:
             if (eventNumber % Divider == 0):
                 Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
+                Data = filterData(Data)
                 [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, baseline, rmsnoise] = hifinderScipy(Data) #hitfinder(Data)
                 if hitStartIndexList:
 
-                    # plt.plot(Data)
-                    # plt.plot(scisig.savgol_filter(x=Data, window_length=33, polyorder=7))
-                    # plt.show()
+
                     for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
 
                         #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
-                        RiseTime = RisetimeFinder(Time,Data,startIndex,EndIndex,baseline)
+                        RiseTime = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
                         PulseHeight = hitAmplitude
                         Charge = ChargeCalculator(Data,startIndex,EndIndex)
                         PeakTime =  Time[hitAmplitudeIndex]
@@ -394,24 +416,27 @@ if 3 in NumberofChannels and 3 != NumberofChannels[0]:
     Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
 if 4 in NumberofChannels and 4 != NumberofChannels[0]:
     Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
-print(Data.head(30),[e for e in columnNames if 'Channel' in e])
+#print(Data.head(30),[e for e in columnNames if 'Channel' in e])
+Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
+Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
+Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
 Data.columns = [e for e in columnNames if 'Channel' in e]
 
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
 PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Noise" in column]
 ChargeColumns = [column for column in columnNames if "Charge" in column]
-histPulseHieghts = Data.plot.hist(y = PulseHeightColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
+histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=True)
 plt.xlabel('Pulse Height (V)')
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
-histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
+histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=True)
 plt.xlabel('Area (V*s)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 
 n, bins = get_hist(histPulseHieghts)
-print(n)
+#print(n)
 bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
 
 
@@ -434,41 +459,6 @@ plt.plot(bincenters,n)
 plt.plot(bincenters[peaks],n[peaks],'k+')
 plt.figure()
 plt.plot(mu,variance)
-
-
-plt
-# #Not USED
-# gauss1 = GaussianModel(prefix='g1_')
-# pars = gauss1.make_params()
-#
-# pars['g1_center'].set(0, min=-.5, max=.5)
-# pars['g1_sigma'].set(.01, min=.001)
-# pars['g1_amplitude'].set(2000, min=10)
-#
-# gauss2 = GaussianModel(prefix='g2_')
-#
-# pars.update(gauss2.make_params())
-#
-# pars['g2_center'].set(0, min=-.5, max=.5)
-# pars['g2_sigma'].set(.01, min=.001)
-# pars['g2_amplitude'].set(2000, min=10)
-#
-# gauss3 = GaussianModel(prefix='g3_')
-#
-# pars.update(gauss3.make_params())
-#
-# pars['g3_center'].set(0, min=-.5, max=.5)
-# pars['g3_sigma'].set(.01, min=.001)
-# pars['g3_amplitude'].set(2000, min=10)
-#
-# mod = gauss1 + gauss2 + gauss3
-#
-# init = mod.eval(pars, x=bincenters)
-# out = mod.fit(n, pars, x=bincenters)
-
-
-
-
 
 Text = []
 if 1 in NumberofChannels:
