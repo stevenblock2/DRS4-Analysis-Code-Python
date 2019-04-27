@@ -24,6 +24,7 @@ import array
 from uncertainties import ufloat
 import pandas as pd
 from math import *
+from scipy.stats import poisson
 from tkinter.filedialog import askopenfilename
 import tkinter as tk
 import os
@@ -33,8 +34,15 @@ from scipy import stats
 import scipy
 from time import sleep
 from lmfit.models import GaussianModel
-
+from matplotlib.ticker import EngFormatter
+from scipy.optimize import curve_fit
+from scipy.misc import factorial
 # Print iterations progress
+
+def poisson(k, lamb,amp):
+    return amp*(lamb**k/factorial(k)) * np.exp(-lamb)
+
+
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
     """
     Call in a loop to create terminal progress bar
@@ -83,11 +91,12 @@ def Interpolator(X, Y, TimeleftIndex, TimeRightIndex,YValue):
         return X0
     else:
         return 0
-def PulseHeightFinder(Y):
-    return max(abs(np.mean(Y[:20]) - Y))
-def filterData(Y):
-    return scisig.savgol_filter(x=Y, window_length=25, polyorder=5)
 
+def filterData(Y):
+    return scisig.savgol_filter(x=Y, window_length=51, polyorder=11)
+def gauss(x, *p):
+    A, mu, sigma = p
+    return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 def hifinderScipy(p):
     #p = filterData(Y)
     NoiseSigma = 7
@@ -100,12 +109,12 @@ def hifinderScipy(p):
     Max = abs(max(p))
     Min = abs(min(p))
     if Max > Min and max(p) > baseline + NoiseSigma*noiserms:
-        peaks, properties = scipy.signal.find_peaks(p, prominence=.004, width=6,height = abs(NoiseSigma*noiserms))
+        peaks, properties = scipy.signal.find_peaks(p, prominence=.003, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
         # plt.plot(Y)
         # plt.fill_between(np.arange(0,1024),y1 = - NoiseSigma*noiserms,y2 =  NoiseSigma*noiserms,alpha = .1)
         # plt.show()
     elif Min > Max and min(p) < baseline - NoiseSigma*noiserms:
-        peaks, properties = scipy.signal.find_peaks(-p, prominence=.004, width=6,height = abs(NoiseSigma*noiserms))
+        peaks, properties = scipy.signal.find_peaks(-p, prominence=.003, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
     else:
         peaks, properties = [],{'widths':[]}
 
@@ -318,7 +327,7 @@ def reject_outliers(TimeDeltas,TimeRes, m):
 
 def ChargeCalculator(Y,startIndex,EndIndex):
     C = 40E-12
-    return np.trapz(Y[startIndex-5:EndIndex+5],dx = .2E-9)/C *1E-12
+    return np.trapz(Y[startIndex:EndIndex],dx = .2)
 
 
 def get_hist(ax):
@@ -332,7 +341,7 @@ def get_hist(ax):
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, distance=25,height =15)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=5,height =15,prominence= 10)
     return peaks,properties
 
 FileName = askopenfilename(
@@ -434,22 +443,20 @@ Data.columns = [e for e in columnNames if 'Channel' in e]
 
 PulseHeightColumns = []
 PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
-PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column or "Pedestle" in column]
+PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
 ChargeColumns = [column for column in columnNames if "Charge" in column]
 histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
 plt.xlabel('Pulse Height (V)')
 plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
 histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-plt.xlabel('Area (V*s)')
+plt.xlabel('Area (V*ns)')
 plt.legend(ChargeColumns)
 plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 
-n, bins = get_hist(histPulseHieghts)
+n, bins = get_hist(histCharge)
 #print(n)
 bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
-
-
 peaks,properties = FindHistPeaks(n)
 widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
 for column in ChargeColumns:
@@ -461,14 +468,25 @@ variance = []
 j = 0
 for (peak,width) in zip(peaks,widths[0]):
     true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+    p0 = [n[peak], bincenters[peak], true_width]
+    coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0)
+    fixed_range = bincenters[int(peak - 10*width):int(peak + 10*width)]
+    hist_fit = gauss(fixed_range, *coeff)
     print("Peak {0}: Height: {1}; Varience: {2}; Ratio: {3}\n".format(j,np.round(bincenters[peak],5),np.round((true_width/2.355)**2,5),np.round(bincenters[peak]/(true_width/2.355)**2,5)))
-    mu.append(bincenters[peak])
-    variance.append((true_width/2.355)**2)
+    plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu$ = {}.$\sigma$ = {}".format(np.round(coeff[1],3),np.round(coeff[2],3)))
+    mu.append(coeff[1])
+    variance.append(coeff[2]**2)
     j = j+1
-plt.plot(bincenters,n)
-plt.plot(bincenters[peaks],n[peaks],'k+')
+plt.legend(loc='best')
+
 plt.figure()
+formatter0 = EngFormatter(unit='C')
+formatter1 = EngFormatter(unit='C^2')
+plt.gca().xaxis.set_major_formatter(formatter0)
+plt.gca().yaxis.set_major_formatter(formatter1)
 plt.plot(mu,variance)
+p = np.polyfit(mu[:1], variance[:1], 1)
+print(p)
 
 Text = []
 if 1 in NumberofChannels:
