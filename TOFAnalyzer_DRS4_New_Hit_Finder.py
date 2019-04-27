@@ -341,7 +341,7 @@ def get_hist(ax):
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, width=5,height =15,prominence= 10)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=2,height =15,prominence= 20,distance = 15)
     return peaks,properties
 
 FileName = askopenfilename(
@@ -452,7 +452,7 @@ plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
 plt.xlabel('Area (V*ns)')
 plt.legend(ChargeColumns)
-plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
+
 
 n, bins = get_hist(histCharge)
 #print(n)
@@ -461,7 +461,6 @@ peaks,properties = FindHistPeaks(n)
 widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
 for column in ChargeColumns:
     print("{} Statistics: \nMean Charge: {}\nVariance of Charge: {}".format(column,Data[column].mean(),Data[column].std()**2))
-
 text = []
 mu = []
 variance = []
@@ -469,7 +468,8 @@ j = 0
 for (peak,width) in zip(peaks,widths[0]):
     true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
     p0 = [n[peak], bincenters[peak], true_width]
-    coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0)
+    bounds = [(.5*n[peak],.5*bincenters[peak],.1*true_width),(1.5*n[peak],1.2*bincenters[peak],true_width)]
+    coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
     fixed_range = bincenters[int(peak - 10*width):int(peak + 10*width)]
     hist_fit = gauss(fixed_range, *coeff)
     print("Peak {0}: Height: {1}; Varience: {2}; Ratio: {3}\n".format(j,np.round(bincenters[peak],5),np.round((true_width/2.355)**2,5),np.round(bincenters[peak]/(true_width/2.355)**2,5)))
@@ -478,7 +478,7 @@ for (peak,width) in zip(peaks,widths[0]):
     variance.append(coeff[2]**2)
     j = j+1
 plt.legend(loc='best')
-
+plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
 plt.figure()
 formatter0 = EngFormatter(unit='C')
 formatter1 = EngFormatter(unit='C^2')
