@@ -14,16 +14,28 @@ Future work:
     - Multiple peaks per events
     - more configuration settings?
 """
+def install_and_import(package):
+    import importlib
+    try:
+        importlib.import_module(package)
+    except ImportError:
+        import pip
+        pip.main(['install', package])
+    finally:
+        globals()[package] = importlib.import_module(package)
 
-
-import matplotlib
+install_and_import('matplotlib')
 import matplotlib.pyplot as plt
+install_and_import('numpy')
 import numpy as np
 import struct
 import array
+install_and_import('uncertainties')
 from uncertainties import ufloat
+install_and_import('pandas')
 import pandas as pd
 from math import *
+install_and_import('scipy')
 from scipy.stats import poisson
 from tkinter.filedialog import askopenfilename,askopenfilenames
 import tkinter as tk
@@ -31,9 +43,7 @@ import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
 from scipy import stats
-import scipy
 from time import sleep
-from lmfit.models import GaussianModel
 from matplotlib.ticker import EngFormatter
 from scipy.optimize import curve_fit
 from scipy.misc import factorial
@@ -124,7 +134,7 @@ def hifinderScipy(p):
         #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
         hitEndIndex = peak + int(width)
         hitStartIndex = peak - int(width)
-        if abs(hitAmplitude) < .5 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 0  and peak + int(width) < 1023:
+        if abs(hitAmplitude) < 500 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 0  and peak + int(width) < 1023:
             if eventNumber % SubDivider == 0:
                 PersistanceData.append(Data)
                 PersistanceTime.append(np.arange(0,1024)*.2)
@@ -349,13 +359,14 @@ FileNames = askopenfilenames(
     filetypes=[("Binary Files", "*.dat")])
 with DRS4BinaryFile(FileNames[0]) as events:
     length = len(list(events))
+itertor = 1
 for FileName in FileNames:
     directory = os.path.dirname(FileName)
     newDirectory = os.path.join(directory,FileName[:-4])
     path,name = os.path.split(FileName)
     if not os.path.exists(newDirectory):
         os.mkdir(newDirectory)
-    print('Processing: {}'.format(os.path.basename(FileName)))
+    print('Processing: {} - ({} of {})'.format(os.path.basename(FileName),itertor,len(FileNames)))
     with DRS4BinaryFile(FileName) as events:
         length = len(list(events))
     Data1 = pd.DataFrame()
@@ -386,7 +397,7 @@ for FileName in FileNames:
             triggerCell = event.trigger_cells[BoardID]
             for i in NumberofChannels:
                 if (eventNumber % Divider == 0):
-                    Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
+                    Data =  (ADCData[BoardID][i]/65535 + (RC/1000 - .5))*1000
                     Data = filterData(Data)
                     [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, baseline, rmsnoise] = hifinderScipy(Data) #hitfinder(Data)
                     #print(hitStartIndexList)
@@ -452,11 +463,11 @@ for FileName in FileNames:
     PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
     ChargeColumns = [column for column in columnNames if "Charge" in column]
     histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
-    plt.xlabel('Pulse Height (V)')
+    plt.xlabel('Pulse Height (mV)')
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
     histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-    plt.xlabel('Area (V*ns)')
+    plt.xlabel('Area (mV*ns)')
     plt.legend(ChargeColumns)
 
 
@@ -475,7 +486,7 @@ for FileName in FileNames:
     for (peak,width) in zip(peaks,widths[0]):
         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
         p0 = [n[peak], bincenters[peak], true_width]
-        bounds = [(0,bincenters[peak]-.8*bincenters[peak],0),(1.5*n[peak],bincenters[peak]+.8*bincenters[peak],true_width)]
+        bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),true_width)]
         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
         fixed_range = bincenters[int(peak - 5*width):int(peak + 5*width)]
         hist_fit = gauss(fixed_range, *coeff)
@@ -490,14 +501,16 @@ for FileName in FileNames:
         j = j+1
     plt.legend(loc='best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-    plt.figure()
-    formatter0 = EngFormatter(unit='C')
-    formatter1 = EngFormatter(unit='C^2')
-    plt.gca().xaxis.set_major_formatter(formatter0)
-    plt.gca().yaxis.set_major_formatter(formatter1)
-    plt.plot(mu,variance)
-    p = np.polyfit(mu[:1], variance[:1], 1)
-    print(p)
+    if mu:
+        plt.figure()
+        formatter0 = EngFormatter(unit='C')
+        formatter1 = EngFormatter(unit='C^2')
+        plt.gca().xaxis.set_major_formatter(formatter0)
+        plt.gca().yaxis.set_major_formatter(formatter1)
+
+        plt.plot(mu,variance)
+        p = np.polyfit(mu[:1], variance[:1], 1)
+
 
     Text = []
     if 1 in NumberofChannels:
@@ -517,8 +530,10 @@ for FileName in FileNames:
     plt.legend(Text)
     plt.xlabel('Rise Times (ns)')
     plt.savefig(os.path.join(newDirectory,'Rise_Time_Distribution.png'))
+    itertor = itertor +1
+    if len(FileNames) != 1:
+        plt.close('all')
 if len(FileNames) == 1:
-
     plt.show()
 else:
     print("Analysis of Files Complete!")
