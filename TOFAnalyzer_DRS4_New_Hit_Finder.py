@@ -25,7 +25,7 @@ from uncertainties import ufloat
 import pandas as pd
 from math import *
 from scipy.stats import poisson
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename,askopenfilenames
 import tkinter as tk
 import os
 import scipy.signal as scisig
@@ -38,7 +38,8 @@ from matplotlib.ticker import EngFormatter
 from scipy.optimize import curve_fit
 from scipy.misc import factorial
 # Print iterations progress
-
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
 def poisson(k, lamb,amp):
     return amp*(lamb**k/factorial(k)) * np.exp(-lamb)
 
@@ -344,166 +345,180 @@ def FindHistPeaks(Y):
     peaks, properties  = scipy.signal.find_peaks(Y, width=2,height =15,prominence= 30,distance = 15)
     return peaks,properties
 
-FileName = askopenfilename(
+FileNames = askopenfilenames(
     filetypes=[("Binary Files", "*.dat")])
-directory = os.path.dirname(FileName)
-newDirectory = os.path.join(directory,FileName[:-4])
-if not os.path.exists(newDirectory):
-    os.mkdir(newDirectory)
-
-Data1 = pd.DataFrame()
-Data2 = pd.DataFrame()
-Data3 = pd.DataFrame()
-Data4 = pd.DataFrame()
-Divider = 1
-SubDivider = 1000
-PersistanceData = []
-PersistanceTime = []
-with DRS4BinaryFile(FileName) as events:
+with DRS4BinaryFile(FileNames[0]) as events:
     length = len(list(events))
-with DRS4BinaryFile(FileName) as f:
+for FileName in FileNames:
+    directory = os.path.dirname(FileName)
+    newDirectory = os.path.join(directory,FileName[:-4])
+    path,name = os.path.split(FileName)
+    if not os.path.exists(newDirectory):
+        os.mkdir(newDirectory)
+    print('Processing: {}'.format(os.path.basename(FileName)))
+    with DRS4BinaryFile(FileName) as events:
+        length = len(list(events))
+    Data1 = pd.DataFrame()
+    Data2 = pd.DataFrame()
+    Data3 = pd.DataFrame()
+    Data4 = pd.DataFrame()
+    Divider = 1
+    SubDivider = 1000
+    PersistanceData = []
+    PersistanceTime = []
 
-    BoardID = f.board_ids[0]
-    NumberofChannels = f.channels[BoardID]
+    with DRS4BinaryFile(FileName) as f:
 
-    if len(NumberofChannels) > 1:
-            ReferenceChannel = NumberofChannels[0]
-            TimeWidths = f.time_widths[f.board_ids[0]][ReferenceChannel]
-    Time = np.arange(0,1024)*.2
+        BoardID = f.board_ids[0]
+        NumberofChannels = f.channels[BoardID]
 
-    eventNumber = 0
-    printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
-    for event in list(f):
+        if len(NumberofChannels) > 1:
+                ReferenceChannel = NumberofChannels[0]
+                TimeWidths = f.time_widths[f.board_ids[0]][ReferenceChannel]
+        Time = np.arange(0,1024)*.2
 
-        RC = event.range_center
-        ADCData = event.adc_data
-        triggerCell = event.trigger_cells[BoardID]
-        for i in NumberofChannels:
-            if (eventNumber % Divider == 0):
-                Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
-                Data = filterData(Data)
-                [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, baseline, rmsnoise] = hifinderScipy(Data) #hitfinder(Data)
-                #print(hitStartIndexList)
-                if hitStartIndexList:
-                    for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
+        eventNumber = 0
+        printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        for event in list(f):
 
-                        #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
-                        RiseTime = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
-                        PulseHeight = hitAmplitude
-                        Charge = ChargeCalculator(Data,startIndex,EndIndex)
-                        PeakTime =  Time[hitAmplitudeIndex]
-                        TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise]})
-                        #print(TempData)
-                        if eventNumber % SubDivider == 0:
-                            plt.plot(Time,Data,'k')
-                            plt.axvline(Time[startIndex],color = 'r',ymax = 1,linewidth=.2)
-                            plt.axvline(Time[hitAmplitudeIndex],color = 'g',ymax = 1,linewidth=.2)
-                            plt.axvline(Time[EndIndex],color = 'b',ymax = 1,linewidth=.2)
-                        if i == 1:
-                            Data1 = Data1.append(TempData,ignore_index=True)
-                        if i == 2:
-                            Data2 = Data2.append(TempData,ignore_index=True)
-                        if i == 3:
-                            Data3 = Data3.append(TempData,ignore_index=True)
-                        if i == 4:
-                            Data4 = Data4.append(TempData,ignore_index=True)
-        #sleep(0.001)
-        printProgressBar(eventNumber + 1, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
-        eventNumber = eventNumber + 1
-columnNames = []
-plt.savefig(os.path.join(newDirectory,'Persistance.png'))
-for i in NumberofChannels:
-    if i == NumberofChannels[0]:
-        columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)]
-    else:
-        columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)])
+            RC = event.range_center
+            ADCData = event.adc_data
+            triggerCell = event.trigger_cells[BoardID]
+            for i in NumberofChannels:
+                if (eventNumber % Divider == 0):
+                    Data =  ADCData[BoardID][i]/65535 + (RC/1000 - .5)
+                    Data = filterData(Data)
+                    [hitStartIndexList, hitPeakAmplitude, hitPeakIndexArray,hitEndIndexList, baseline, rmsnoise] = hifinderScipy(Data) #hitfinder(Data)
+                    #print(hitStartIndexList)
+                    if hitStartIndexList:
+                        for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
 
-if 1 == NumberofChannels[0]:
-    Data = Data1
-if 2 == NumberofChannels[0]:
-    Data = Data2
-if 3 == NumberofChannels[0]:
-    Data = Data3
-if 4 == NumberofChannels[0]:
-    Data = Data4
+                            #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
+                            RiseTime = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
+                            PulseHeight = hitAmplitude
+                            Charge = ChargeCalculator(Data,startIndex,EndIndex)
+                            PeakTime =  Time[hitAmplitudeIndex]
+                            TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise]})
+                            #print(TempData)
+                            if eventNumber % SubDivider == 0:
+                                plt.plot(Time,Data,'k')
+                                plt.axvline(Time[startIndex],color = 'r',ymax = 1,linewidth=.2)
+                                plt.axvline(Time[hitAmplitudeIndex],color = 'g',ymax = 1,linewidth=.2)
+                                plt.axvline(Time[EndIndex],color = 'b',ymax = 1,linewidth=.2)
+                            if i == 1:
+                                Data1 = Data1.append(TempData,ignore_index=True)
+                            if i == 2:
+                                Data2 = Data2.append(TempData,ignore_index=True)
+                            if i == 3:
+                                Data3 = Data3.append(TempData,ignore_index=True)
+                            if i == 4:
+                                Data4 = Data4.append(TempData,ignore_index=True)
+            #sleep(0.001)
+            printProgressBar(eventNumber + 1, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
+            eventNumber = eventNumber + 1
+    columnNames = []
+    plt.savefig(os.path.join(newDirectory,'Persistance.png'))
+    for i in NumberofChannels:
+        if i == NumberofChannels[0]:
+            columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)]
+        else:
+            columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)])
 
-
-if 1 in NumberofChannels and 1 != NumberofChannels[0]:
-    Data = pd.concat([Data,Data1],axis=1,ignore_index=True)
-if 2 in NumberofChannels and 2 != NumberofChannels[0]:
-    Data = pd.concat([Data,Data2],axis=1,ignore_index=True)
-if 3 in NumberofChannels and 3 != NumberofChannels[0]:
-    Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
-if 4 in NumberofChannels and 4 != NumberofChannels[0]:
-    Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
-print(Data.head(30),[e for e in columnNames if 'Channel' in e])
-#Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
-#Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
-Data.columns = [e for e in columnNames if 'Channel' in e]
-
-PulseHeightColumns = []
-PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
-PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
-ChargeColumns = [column for column in columnNames if "Charge" in column]
-histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
-plt.xlabel('Pulse Height (V)')
-plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
-
-histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-plt.xlabel('Area (V*ns)')
-plt.legend(ChargeColumns)
+    if 1 == NumberofChannels[0]:
+        Data = Data1
+    if 2 == NumberofChannels[0]:
+        Data = Data2
+    if 3 == NumberofChannels[0]:
+        Data = Data3
+    if 4 == NumberofChannels[0]:
+        Data = Data4
 
 
-n, bins = get_hist(histCharge)
-#print(n)
-bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
-peaks,properties = FindHistPeaks(n)
-widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
-for column in ChargeColumns:
-    print("{} Statistics: \nMean Charge: {}\nVariance of Charge: {}".format(column,Data[column].mean(),Data[column].std()**2))
-text = []
-mu = []
-variance = []
-j = 0
-for (peak,width) in zip(peaks,widths[0]):
-    true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-    p0 = [n[peak], bincenters[peak], true_width]
-    bounds = [(0,bincenters[peak]-.8*bincenters[peak],0),(1.5*n[peak],bincenters[peak]+.8*bincenters[peak],true_width)]
-    coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-    fixed_range = bincenters[int(peak - 10*width):int(peak + 10*width)]
-    hist_fit = gauss(fixed_range, *coeff)
-    print("Peak {0}: Height: {1}; Varience: {2}; Ratio: {3}\n".format(j,np.round(bincenters[peak],5),np.round((true_width/2.355)**2,5),np.round(bincenters[peak]/(true_width/2.355)**2,5)))
-    plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu$ = {}.$\sigma$ = {}".format(np.round(coeff[1],3),np.round(coeff[2],3)))
-    mu.append(coeff[1])
-    variance.append(coeff[2]**2)
-    j = j+1
-plt.legend(loc='best')
-plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-plt.figure()
-formatter0 = EngFormatter(unit='C')
-formatter1 = EngFormatter(unit='C^2')
-plt.gca().xaxis.set_major_formatter(formatter0)
-plt.gca().yaxis.set_major_formatter(formatter1)
-plt.plot(mu,variance)
-p = np.polyfit(mu[:1], variance[:1], 1)
-print(p)
+    if 1 in NumberofChannels and 1 != NumberofChannels[0]:
+        Data = pd.concat([Data,Data1],axis=1,ignore_index=True)
+    if 2 in NumberofChannels and 2 != NumberofChannels[0]:
+        Data = pd.concat([Data,Data2],axis=1,ignore_index=True)
+    if 3 in NumberofChannels and 3 != NumberofChannels[0]:
+        Data = pd.concat([Data,Data3],axis=1,ignore_index=True)
+    if 4 in NumberofChannels and 4 != NumberofChannels[0]:
+        Data = pd.concat([Data,Data4],axis=1,ignore_index=True)
+    # print(Data.head(30),[e for e in columnNames if 'Channel' in e])
+    #Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
+    #Data= Data[(np.abs(stats.zscore(Data)) < 3).all(axis=1)]
+    Data.columns = [e for e in columnNames if 'Channel' in e]
 
-Text = []
-if 1 in NumberofChannels:
-    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
-    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(1,ToFMean,TofStd))
-if 2 in NumberofChannels:
-    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 2 Rise Time'].values,np.ones(len(Data.index)))
-    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(2,ToFMean,TofStd))
-if 3 in NumberofChannels:
-    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 3 Rise Time'].values,np.ones(len(Data.index)))
-    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(3,ToFMean,TofStd))
-if 4 in NumberofChannels:
-    [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
-    Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
-ristimeColumns = [column for column in columnNames if "Rise Time" in column]
-histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 1000,alpha = .3,subplots=False,title = 'Rise Time Distributions')
-plt.legend(Text)
-plt.xlabel('Rise Times (ns)')
-plt.savefig(os.path.join(newDirectory,'Rise_Time_Distribution.png'))
-plt.show()
+    PulseHeightColumns = []
+    PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
+    PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
+    ChargeColumns = [column for column in columnNames if "Charge" in column]
+    histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
+    plt.xlabel('Pulse Height (V)')
+    plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
+
+    histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
+    plt.xlabel('Area (V*ns)')
+    plt.legend(ChargeColumns)
+
+
+    n, bins = get_hist(histCharge)
+    #print(n)
+    bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
+    peaks,properties = FindHistPeaks(n)
+    widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
+    # for column in ChargeColumns:
+    #     print("{} Statistics: \nMean Charge: {}\nVariance of Charge: {}".format(column,Data[column].mean(),Data[column].std()**2))
+    text = []
+    mu = []
+    variance = []
+    lammaList = []
+    j = 0
+    for (peak,width) in zip(peaks,widths[0]):
+        true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+        p0 = [n[peak], bincenters[peak], true_width]
+        bounds = [(0,bincenters[peak]-.8*bincenters[peak],0),(1.5*n[peak],bincenters[peak]+.8*bincenters[peak],true_width)]
+        coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+        fixed_range = bincenters[int(peak - 5*width):int(peak + 5*width)]
+        hist_fit = gauss(fixed_range, *coeff)
+        # print("Peak {0}: Height: {1}; Varience: {2}; Ratio: {3}\n".format(j,np.round(bincenters[peak],5),np.round((true_width/2.355)**2,5),np.round(bincenters[peak]/(true_width/2.355)**2,5)))
+        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu$ = {}.$\sigma$ = {}".format(np.round(coeff[1],3),np.round(coeff[2],3)))
+        mu.append(coeff[1])
+        variance.append(coeff[2]**2)
+        # if j == 0:
+        #     lamma = -np.log(coeff[1])
+        # if j != 0:
+        #     lamma = -np.log(coeff[1])+ coeff[1]
+        j = j+1
+    plt.legend(loc='best')
+    plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
+    plt.figure()
+    formatter0 = EngFormatter(unit='C')
+    formatter1 = EngFormatter(unit='C^2')
+    plt.gca().xaxis.set_major_formatter(formatter0)
+    plt.gca().yaxis.set_major_formatter(formatter1)
+    plt.plot(mu,variance)
+    p = np.polyfit(mu[:1], variance[:1], 1)
+    print(p)
+
+    Text = []
+    if 1 in NumberofChannels:
+        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
+        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(1,ToFMean,TofStd))
+    if 2 in NumberofChannels:
+        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 2 Rise Time'].values,np.ones(len(Data.index)))
+        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(2,ToFMean,TofStd))
+    if 3 in NumberofChannels:
+        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 3 Rise Time'].values,np.ones(len(Data.index)))
+        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(3,ToFMean,TofStd))
+    if 4 in NumberofChannels:
+        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
+        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
+    ristimeColumns = [column for column in columnNames if "Rise Time" in column]
+    histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 1000,alpha = .3,subplots=False,title = 'Rise Time Distributions')
+    plt.legend(Text)
+    plt.xlabel('Rise Times (ns)')
+    plt.savefig(os.path.join(newDirectory,'Rise_Time_Distribution.png'))
+if len(FileNames) == 1:
+
+    plt.show()
+else:
+    print("Analysis of Files Complete!")
