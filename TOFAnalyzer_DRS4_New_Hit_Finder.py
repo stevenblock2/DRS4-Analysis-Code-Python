@@ -341,7 +341,7 @@ def get_hist(ax):
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, width=2,height =15,prominence= 20,distance = 15)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=2,height =15,prominence= 30,distance = 15)
     return peaks,properties
 
 FileName = askopenfilename(
@@ -468,7 +468,7 @@ j = 0
 for (peak,width) in zip(peaks,widths[0]):
     true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
     p0 = [n[peak], bincenters[peak], true_width]
-    bounds = [(.5*n[peak],.5*bincenters[peak],.1*true_width),(1.5*n[peak],1.2*bincenters[peak],true_width)]
+    bounds = [(0,bincenters[peak]-.8*bincenters[peak],0),(1.5*n[peak],bincenters[peak]+.8*bincenters[peak],true_width)]
     coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
     fixed_range = bincenters[int(peak - 10*width):int(peak + 10*width)]
     hist_fit = gauss(fixed_range, *coeff)
