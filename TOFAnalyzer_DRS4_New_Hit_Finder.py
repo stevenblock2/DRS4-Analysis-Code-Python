@@ -516,7 +516,6 @@ for FileName in FileNames:
         #     lamma = -np.log(coeff[1])
         # if j != 0:
         #     lamma = -np.log(coeff[1])+ coeff[1]
-        print(mu,len(mu))
         j = j+1
     if len(mu) > 3:
         X = mu
@@ -529,17 +528,15 @@ for FileName in FileNames:
         x_plot = np.linspace(0,2*NewX[-1], 1000)
     else:
         X = bincenters #this alters the behavior of the distribution!!!!
-        print(bincenters[np.where(n==np.max(n))[0][0]])
         NewX = bincenters/bincenters[np.where(n==np.max(n))[0]][0]#plt.plot(newmu[1:],amp[1:],'k+')
         Y = n
         p0= [NewX[np.where(Y==np.max(Y))[0][0]],np.max(Y)*10]
-        bounds = [(0,0),(10,5*np.max(n))]
-        parameters, cov_matrix = curve_fit(poisson, X, Y,p0=p0,sigma = 1/np.sqrt(Y))
-        x_plot = np.linspace(0,2*NewX[-1], 1000)
-    true_x = np.linspace(0,2*X[-1], 1000)
-    #print(true_x,x_plot)
+        bounds = [(0,0),(5,5*np.max(n))]
+        parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001))
+        x_plot = np.linspace(NewX[0],2*NewX[-1], 1000)
+    true_x = np.linspace(X[0],2*X[-1], 1000)
     p = poisson(x_plot, *parameters)
-    plt.plot(abs(true_x),p , 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
+    plt.plot(true_x,p , 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
     plt.legend(loc='best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     if len(mu) > 3:
