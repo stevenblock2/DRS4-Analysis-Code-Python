@@ -141,7 +141,7 @@ def hifinderScipy(p):
         #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
         hitEndIndex = peak + int(width)
         hitStartIndex = peak - int(width)
-        if abs(hitAmplitude) < 500 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 0  and peak + int(width) < 1023:
+        if abs(hitAmplitude) < 500 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 100  and peak + int(width) < 900:
             if eventNumber % SubDivider == 0:
                 PersistanceData.append(Data)
                 PersistanceTime.append(np.arange(0,1024)*.2)
@@ -353,8 +353,8 @@ def reject_outliers(TimeDeltas,TimeRes, m):
 
 def ChargeCalculator(Y,startIndex,EndIndex):
     C = 40E-12
-    return np.trapz(Y[startIndex:EndIndex],dx = .2)
-
+    Gain = 31
+    return abs(np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/1.602E-19*Gain)
 
 def get_hist(ax):
     n,bins = [],[]
@@ -481,15 +481,11 @@ for FileName in FileNames:
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
     histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-    plt.xlabel('Area (mV*ns)')
+    plt.xlabel('Area (V*ns)')
     plt.legend(ChargeColumns)
 
 
-    n, bins = get_hist(histCharge)
     #print(n)
-    bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
-    peaks,properties = FindHistPeaks(n)
-    widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     # for column in ChargeColumns:
     #     print("{} Statistics: \nMean Charge: {}\nVariance of Charge: {}".format(column,Data[column].mean(),Data[column].std()**2))
 
@@ -499,13 +495,17 @@ for FileName in FileNames:
     lammaList = []
 
     amp = []
+    n, bins = get_hist(histCharge)
+    bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
+    peaks,properties = FindHistPeaks(n)
+    widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     j = 0
     for (peak,width) in zip(peaks,widths[0]):
         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
         p0 = [n[peak], bincenters[peak], .7*true_width]
         bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-        fixed_range = bincenters[int(peak - 5*width):int(peak + 5*width)]
+        fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
         hist_fit = gauss(fixed_range, *coeff)
         print(coeff)
         plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
@@ -516,19 +516,33 @@ for FileName in FileNames:
         #     lamma = -np.log(coeff[1])
         # if j != 0:
         #     lamma = -np.log(coeff[1])+ coeff[1]
+        print(mu,len(mu))
         j = j+1
-    newmu = mu/mu[1]
-    #plt.plot(newmu[1:],amp[1:],'k+')
-    amp = amp
-    p0= [1,amp[2]*10]
-    bounds = [(0,0),(5,10*amp[2])]
-    parameters, cov_matrix = curve_fit(poisson, newmu[1:], amp[1:],p0=p0,sigma = 1/1000*1/np.sqrt(amp[1:]),absolute_sigma = True)
-    x_plot = np.linspace(0,2*newmu[-1], 1000)
-    true_x = np.linspace(0,2* mu[-1], 1000)
-    plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
+    if len(mu) > 3:
+        X = mu
+        NewX = mu/abs(mu[0]) #this alters the behavior of the distribution!!!!
+        #plt.plot(newmu[1:],amp[1:],'k+')
+        Y = amp
+        p0= [NewX[1],Y[1]*10]
+        bounds = [(0,0),(5,10*Y[1])]
+        parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y))
+        x_plot = np.linspace(0,2*NewX[-1], 1000)
+    else:
+        X = bincenters #this alters the behavior of the distribution!!!!
+        print(bincenters[np.where(n==np.max(n))[0][0]])
+        NewX = bincenters/bincenters[np.where(n==np.max(n))[0]][0]#plt.plot(newmu[1:],amp[1:],'k+')
+        Y = n
+        p0= [NewX[np.where(Y==np.max(Y))[0][0]],np.max(Y)*10]
+        bounds = [(0,0),(10,5*np.max(n))]
+        parameters, cov_matrix = curve_fit(poisson, X, Y,p0=p0,sigma = 1/np.sqrt(Y))
+        x_plot = np.linspace(0,2*NewX[-1], 1000)
+    true_x = np.linspace(0,2*X[-1], 1000)
+    #print(true_x,x_plot)
+    p = poisson(x_plot, *parameters)
+    plt.plot(abs(true_x),p , 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
     plt.legend(loc='best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-    if mu:
+    if len(mu) > 3:
         plt.figure()
         formatter0 = EngFormatter(unit='C')
         formatter1 = EngFormatter(unit='C^2')
@@ -536,7 +550,6 @@ for FileName in FileNames:
         plt.gca().yaxis.set_major_formatter(formatter1)
         plt.plot(mu,variance)
         p = np.polyfit(mu[:1], variance[:1], 1)
-
 
     Text = []
     if 1 in NumberofChannels:
