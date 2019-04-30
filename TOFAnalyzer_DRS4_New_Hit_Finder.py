@@ -46,19 +46,19 @@ from drs4 import DRS4BinaryFile
 from scipy import stats
 from time import sleep
 from matplotlib.ticker import EngFormatter
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit,least_squares
 from scipy.misc import factorial
 from scipy.optimize import minimize
 # Print iterations progress
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
-def poisson(k, *p):
-    lamb,amp = p
-    return amp*(lamb**(k))/factorial(k) * np.exp(-lamb)
+def poisson(p,k):
+    lamb=p
+    return (lamb**(k))/factorial(k) * np.exp(-lamb)
 
-def negLogLikelihood(params, data):
-    """ the negative log-Likelohood-Function"""
-    lnl = - np.sum(np.log(poisson(data, params[0])))
+def poissonMinimizer(p,k,Y):
+    lamb= p
+    lnl = np.log(((lamb**(k))/factorial(k) * np.exp(-lamb)-Y)**2+1)
     return lnl
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
@@ -115,6 +115,10 @@ def filterData(Y):
 def gauss(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
+def gaussMinimizer(p,x,Y):
+    A, mu, sigma = p[0],p[1],p[2]
+    return np.log((A*np.exp(-(x-mu)**2/(2.*sigma**2))-Y)**2+1)
+
 def hifinderScipy(p):
     #p = filterData(Y)
     NoiseSigma = 7
@@ -139,8 +143,8 @@ def hifinderScipy(p):
     for (peak,width) in zip(peaks,properties['widths']):
         hitAmplitude = p[peak]
         #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
-        hitEndIndex = peak + int(width)
-        hitStartIndex = peak - int(width)
+        hitEndIndex = peak + int(.9*width)
+        hitStartIndex = peak - int(.9*width)
         if abs(hitAmplitude) < 500 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 100  and peak + int(width) < 900:
             if eventNumber % SubDivider == 0:
                 PersistanceData.append(Data)
@@ -352,9 +356,10 @@ def reject_outliers(TimeDeltas,TimeRes, m):
     return TimeDeltas,TimeRes
 
 def ChargeCalculator(Y,startIndex,EndIndex):
-    C = 40E-12
+    C = 40+10
     Gain = 31
-    return abs(np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/1.602E-19*Gain)
+    e = 1.602E-19
+    return abs(np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/e)
 
 def get_hist(ax):
     n,bins = [],[]
@@ -481,7 +486,7 @@ for FileName in FileNames:
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
     histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-    plt.xlabel('Area (V*ns)')
+    plt.xlabel('Area (pC/e)')
     plt.legend(ChargeColumns)
 
 
@@ -500,54 +505,65 @@ for FileName in FileNames:
     peaks,properties = FindHistPeaks(n)
     widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     j = 0
+    scale = 1
     for (peak,width) in zip(peaks,widths[0]):
         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
         p0 = [n[peak], bincenters[peak], .7*true_width]
-        bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
-        coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+        bounds = [(0,bincenters[peak]-.5*abs(bincenters[peak]),0),(1.2*n[peak],bincenters[peak]+.5
+        *abs(bincenters[peak]),true_width)]
+        res = least_squares(gaussMinimizer, p0, loss='soft_l1', f_scale=scale,args=(bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)]),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac')
+        print(res)
+        #coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-        hist_fit = gauss(fixed_range, *coeff)
-        print(coeff)
-        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
-        mu.append(coeff[1])
-        variance.append(coeff[2]**2)
-        amp.append(coeff[0])
+        hist_fit = gauss(fixed_range, *res.x)
+
+        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
+        mu.append(res.x[1])
+        variance.append(res.x[2]**2)
+        amp.append(res.x[0])
         # if j == 0:
         #     lamma = -np.log(coeff[1])
         # if j != 0:
         #     lamma = -np.log(coeff[1])+ coeff[1]
         j = j+1
+
     if len(mu) > 3:
         X = mu
-        NewX = mu/abs(mu[0]) #this alters the behavior of the distribution!!!!
+        NewX = mu/abs(mu[1]) #this alters the behavior of the distribution!!!!
         #plt.plot(newmu[1:],amp[1:],'k+')
-        Y = amp
-        p0= [NewX[1],Y[1]*10]
-        bounds = [(0,0),(5,10*Y[1])]
-        parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y))
+        area = sum(amp*NewX)
+        Y = amp/area
+        p0= NewX[1]
+        bounds = [(NewX[0]),(NewX[-1])]
+        #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y),bounds = bounds)
+        res = least_squares(poissonMinimizer, p0, loss='soft_l1', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac')
+        print(res)
         x_plot = np.linspace(0,2*NewX[-1], 1000)
     else:
         X = bincenters #this alters the behavior of the distribution!!!!
-        NewX = bincenters/bincenters[np.where(n==np.max(n))[0]][0]#plt.plot(newmu[1:],amp[1:],'k+')
-        Y = n
-        p0= [NewX[np.where(Y==np.max(Y))[0][0]],np.max(Y)*10]
-        bounds = [(0,0),(5,5*np.max(n))]
-        parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001))
-        x_plot = np.linspace(NewX[0],2*NewX[-1], 1000)
-    true_x = np.linspace(X[0],2*X[-1], 1000)
-    p = poisson(x_plot, *parameters)
-    plt.plot(true_x,p , 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
+        NewX = bincenters/bincenters[np.where(n==np.max(n))[0][0]]#plt.plot(newmu[1:],amp[1:],'k+')
+        area = np.trapz(n,dx = abs(bincenters[1]-bincenters[0]))
+        Y = n/area
+        p0= NewX[np.where(Y==np.max(Y))[0][0]]
+        bounds = [(0),(5)]
+        #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001),bounds = bounds)
+        res = least_squares(poissonMinimizer, p0, loss='soft_l1', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac')
+        print(res)
+        x_plot = np.linspace(0,2*NewX[-1], 1000)
+    true_x = np.linspace(0,2*X[-1], 1000)
+    p = poisson(res.x,x_plot)
+    p = p*(max(n)/max(p))
+    plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
     plt.legend(loc='best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     if len(mu) > 3:
         plt.figure()
-        formatter0 = EngFormatter(unit='C')
-        formatter1 = EngFormatter(unit='C^2')
-        plt.gca().xaxis.set_major_formatter(formatter0)
-        plt.gca().yaxis.set_major_formatter(formatter1)
+        plt.ylabel(r'$\sigma^2$ (pC/e^2)')
+        plt.xlabel(r'$\mu$ (pC/e)')
+        #plt.gca().yaxis.set_major_formatter(formatter1)
         plt.plot(mu,variance)
-        p = np.polyfit(mu[:1], variance[:1], 1)
-
+        p = np.polyfit(mu, variance, 1)
+        print(p)
     Text = []
     if 1 in NumberofChannels:
         [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
