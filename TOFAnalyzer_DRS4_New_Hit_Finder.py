@@ -53,13 +53,13 @@ from scipy.optimize import minimize
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 def poisson(p,k):
-    lamb=p
-    return (lamb**(k))/factorial(k) * np.exp(-lamb)
+    lamb,amp=p[0],p[1]
+    return amp*(lamb**(k))/factorial(k) * np.exp(-lamb)
 
 def poissonMinimizer(p,k,Y):
-    lamb= p
-    lnl = np.log(((lamb**(k))/factorial(k) * np.exp(-lamb)-Y)**2+1)
-    return lnl
+    lamb,amp= p[0],p[1]
+    lnl = amp*((lamb**(k))/factorial(k) * np.exp(-lamb)-Y)
+    return np.log(lnl**2)
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
     """
@@ -143,8 +143,8 @@ def hifinderScipy(p):
     for (peak,width) in zip(peaks,properties['widths']):
         hitAmplitude = p[peak]
         #ThresholdADC = baseline - (.3 * (baseline - hitAmplitude))
-        hitEndIndex = peak + int(.9*width)
-        hitStartIndex = peak - int(.9*width)
+        hitEndIndex = peak + int(width)
+        hitStartIndex = peak - int(width)
         if abs(hitAmplitude) < 500 and hitStartIndex != 0 and hitEndIndex !=0 and peak !=0 and hitEndIndex < 1023 and peak < hitEndIndex and peak > hitStartIndex and peak - int(width) > 100  and peak + int(width) < 900:
             if eventNumber % SubDivider == 0:
                 PersistanceData.append(Data)
@@ -372,7 +372,7 @@ def get_hist(ax):
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, width=2,height =10,prominence= 30,distance = 15)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 30,distance = 15)
     return peaks,properties
 
 FileNames = askopenfilenames(
@@ -505,19 +505,19 @@ for FileName in FileNames:
     peaks,properties = FindHistPeaks(n)
     widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     j = 0
-    scale = 1
+    scale = .5
     for (peak,width) in zip(peaks,widths[0]):
-        true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-        p0 = [n[peak], bincenters[peak], .7*true_width]
-        bounds = [(0,bincenters[peak]-.5*abs(bincenters[peak]),0),(1.2*n[peak],bincenters[peak]+.5
-        *abs(bincenters[peak]),true_width)]
-        res = least_squares(gaussMinimizer, p0, loss='soft_l1', f_scale=scale,args=(bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)]),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac')
-        print(res)
+        #true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+        X = bincenters[int(peak - width):int(peak + width)]
+        Y = n[int(peak - width):int(peak + width)]
+        mean,std = weighted_avg_and_std(X,Y)
+        p0 = [n[peak], mean, std]
+        bounds = [(0,.5*mean,.5*std),(n[peak],1.5*mean,1.5*std)]
+        res = least_squares(gaussMinimizer, p0, loss='linear', f_scale=scale,args=(X,Y),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
         #coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
         hist_fit = gauss(fixed_range, *res.x)
-
-        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
+        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
         mu.append(res.x[1])
         variance.append(res.x[2]**2)
         amp.append(res.x[0])
@@ -533,10 +533,10 @@ for FileName in FileNames:
         #plt.plot(newmu[1:],amp[1:],'k+')
         area = sum(amp*NewX)
         Y = amp/area
-        p0= NewX[1]
-        bounds = [(NewX[0]),(NewX[-1])]
+        p0= [NewX[1],Y[1]]
+        bounds = [(NewX[0],0),(NewX[-1],10)]
         #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y),bounds = bounds)
-        res = least_squares(poissonMinimizer, p0, loss='soft_l1', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac')
+        res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
         print(res)
         x_plot = np.linspace(0,2*NewX[-1], 1000)
     else:
@@ -544,13 +544,13 @@ for FileName in FileNames:
         NewX = bincenters/bincenters[np.where(n==np.max(n))[0][0]]#plt.plot(newmu[1:],amp[1:],'k+')
         area = np.trapz(n,dx = abs(bincenters[1]-bincenters[0]))
         Y = n/area
-        p0= NewX[np.where(Y==np.max(Y))[0][0]]
-        bounds = [(0),(5)]
+        p0= [NewX[1],Y[1]]
+        bounds = [(NewX[0],0),(NewX[-1],np.inf)]
         #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001),bounds = bounds)
-        res = least_squares(poissonMinimizer, p0, loss='soft_l1', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac')
+        res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
         print(res)
         x_plot = np.linspace(0,2*NewX[-1], 1000)
-    true_x = np.linspace(0,2*X[-1], 1000)
+    true_x = np.linspace(X[0],2*X[-1], 1000)
     p = poisson(res.x,x_plot)
     p = p*(max(n)/max(p))
     plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
@@ -558,11 +558,14 @@ for FileName in FileNames:
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     if len(mu) > 3:
         plt.figure()
-        plt.ylabel(r'$\sigma^2$ (pC/e^2)')
-        plt.xlabel(r'$\mu$ (pC/e)')
+        plt.ylabel(r'$\sigma^2$ $(\frac{pC}{e})^2$')
+        plt.xlabel(r'$\mu$ ($\frac{pC}{e}$)')
         #plt.gca().yaxis.set_major_formatter(formatter1)
-        plt.plot(mu,variance)
         p = np.polyfit(mu, variance, 1)
+
+        plt.plot(mu,variance,label = 'Raw Data')
+
+
         print(p)
     Text = []
     if 1 in NumberofChannels:
