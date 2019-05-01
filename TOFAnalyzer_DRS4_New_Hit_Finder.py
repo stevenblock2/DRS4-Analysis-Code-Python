@@ -507,6 +507,7 @@ for FileName in FileNames:
     j = 0
     scale = .5
     for (peak,width) in zip(peaks,widths[0]):
+<<<<<<< HEAD
         #true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
         X = bincenters[int(peak - width):int(peak + width)]
         Y = n[int(peak - width):int(peak + width)]
@@ -521,11 +522,26 @@ for FileName in FileNames:
         mu.append(res.x[1])
         variance.append(res.x[2]**2)
         amp.append(res.x[0])
+=======
+        true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+        p0 = [n[peak], bincenters[peak], .7*true_width]
+        bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
+        coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+        fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
+        hist_fit = gauss(fixed_range, *coeff)
+        print(coeff)
+        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
+        mu.append(coeff[1])
+        variance.append(coeff[2]**2)
+        amp.append(coeff[0])
+>>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
         # if j == 0:
         #     lamma = -np.log(coeff[1])
         # if j != 0:
         #     lamma = -np.log(coeff[1])+ coeff[1]
+        print(mu,len(mu))
         j = j+1
+<<<<<<< HEAD
 
     if len(mu) > 3:
         X = mu
@@ -554,6 +570,18 @@ for FileName in FileNames:
     p = poisson(res.x,x_plot)
     p = p*(max(n)/max(p))
     plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
+=======
+    if len(mu) > 3:
+        newmu = mu/mu[0] #this alters the behavior of the distribution!!!!
+        #plt.plot(newmu[1:],amp[1:],'k+')
+        amp = amp
+        p0= [1,amp[1]*10]
+        bounds = [(0,0),(5,10*amp[1])]
+        parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
+        x_plot = np.linspace(0,2*newmu[-1], 1000)
+        true_x = np.linspace(0,2* mu[-1], 1000)
+        plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
+>>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
     plt.legend(loc='best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     if len(mu) > 3:
@@ -565,8 +593,11 @@ for FileName in FileNames:
 
         plt.plot(mu,variance,label = 'Raw Data')
 
+<<<<<<< HEAD
 
         print(p)
+=======
+>>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
     Text = []
     if 1 in NumberofChannels:
         [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
