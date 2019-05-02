@@ -52,6 +52,7 @@ from matplotlib.ticker import EngFormatter
 from scipy.optimize import curve_fit,least_squares
 from scipy.misc import factorial
 from scipy.optimize import minimize
+from lmfit.models import GaussianModel
 # Print iterations progress
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -359,10 +360,10 @@ def reject_outliers(TimeDeltas,TimeRes, m):
     return TimeDeltas,TimeRes
 
 def ChargeCalculator(Y,startIndex,EndIndex):
-    C = 40+10
+    C = 1
     Gain = 31
     e = 1.602E-19
-    return abs(np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/e)
+    return (np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/e)
 
 def get_hist(ax):
     n,bins = [],[]
@@ -375,7 +376,7 @@ def get_hist(ax):
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 30,distance = 15)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 5,distance = 15)
     return peaks,properties
 
 FileNames = askopenfilenames(
@@ -489,7 +490,7 @@ for FileName in FileNames:
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
     histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
-    plt.xlabel('Area (pC/e)')
+    plt.xlabel(r'Area ($\frac{pC}{e}$)')
     plt.legend(ChargeColumns)
 
 
@@ -510,7 +511,6 @@ for FileName in FileNames:
     j = 0
     scale = .5
     for (peak,width) in zip(peaks,widths[0]):
-<<<<<<< HEAD
         #true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
         X = bincenters[int(peak - width):int(peak + width)]
         Y = n[int(peak - width):int(peak + width)]
@@ -521,86 +521,106 @@ for FileName in FileNames:
         #coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
         hist_fit = gauss(fixed_range, *res.x)
-        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
+        #plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
         mu.append(res.x[1])
         variance.append(res.x[2]**2)
         amp.append(res.x[0])
-=======
-        true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-        p0 = [n[peak], bincenters[peak], .7*true_width]
-        bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
-        coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-        fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-        hist_fit = gauss(fixed_range, *coeff)
-        print(coeff)
-        plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
-        mu.append(coeff[1])
-        variance.append(coeff[2]**2)
-        amp.append(coeff[0])
->>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
+
+        #         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+        #         p0 = [n[peak], bincenters[peak], .7*true_width]
+        #         bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
+        #         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+        #         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
+        #         hist_fit = gauss(fixed_range, *coeff)
+        #         print(coeff)
+        #         plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
+        #         mu.append(coeff[1])
+        #         variance.append(coeff[2]**2)
+        #         amp.append(coeff[0])
+        # >>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
         # if j == 0:
         #     lamma = -np.log(coeff[1])
         # if j != 0:
         #     lamma = -np.log(coeff[1])+ coeff[1]
         print(mu,len(mu))
         j = j+1
-<<<<<<< HEAD
 
-    if len(mu) > 3:
-        X = mu
-        NewX = mu/abs(mu[1]) #this alters the behavior of the distribution!!!!
-        #plt.plot(newmu[1:],amp[1:],'k+')
-        area = sum(amp*NewX)
-        Y = amp/area
-        p0= [NewX[1],Y[1]]
-        bounds = [(NewX[0],0),(NewX[-1],10)]
-        #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y),bounds = bounds)
-        res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-        print(res)
-        x_plot = np.linspace(0,2*NewX[-1], 1000)
-    else:
-        X = bincenters #this alters the behavior of the distribution!!!!
-        NewX = bincenters/bincenters[np.where(n==np.max(n))[0][0]]#plt.plot(newmu[1:],amp[1:],'k+')
-        area = np.trapz(n,dx = abs(bincenters[1]-bincenters[0]))
-        Y = n/area
-        p0= [NewX[1],Y[1]]
-        bounds = [(NewX[0],0),(NewX[-1],np.inf)]
-        #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001),bounds = bounds)
-        res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-        print(res)
-        x_plot = np.linspace(0,2*NewX[-1], 1000)
-    true_x = np.linspace(X[0],2*X[-1], 1000)
-    p = poisson(res.x,x_plot)
-    p = p*(max(n)/max(p))
-    plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
-=======
-    if len(mu) > 3:
-        newmu = mu/mu[0] #this alters the behavior of the distribution!!!!
-        #plt.plot(newmu[1:],amp[1:],'k+')
-        amp = amp
-        p0= [1,amp[1]*10]
-        bounds = [(0,0),(5,10*amp[1])]
-        parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
-        x_plot = np.linspace(0,2*newmu[-1], 1000)
-        true_x = np.linspace(0,2* mu[-1], 1000)
-        plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
->>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
-    plt.legend(loc='best')
-    plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-    if len(mu) > 3:
-        plt.figure()
-        plt.ylabel(r'$\sigma^2$ $(\frac{pC}{e})^2$')
-        plt.xlabel(r'$\mu$ ($\frac{pC}{e}$)')
-        #plt.gca().yaxis.set_major_formatter(formatter1)
-        p = np.polyfit(mu, variance, 1)
+    for i in range(0,len(mu)):
+        if i == 0:
+            mod = GaussianModel(prefix = 'f{}_'.format(i))
+            pars = mod.guess(n,x=bincenters, sigma=np.sqrt(variance[i]),height = amp[i],center = mu[i])
+            pars.add('G',value = mu[i+1]-mu[i],brute_step=.01*mu[i],min = .1*(mu[i+1]-mu[i]),max = 5*(mu[i+1]-mu[i]))
+        else:
+            tempmod =  GaussianModel(prefix = 'f{}_'.format(i))
+            temppars = tempmod.guess(n,x=bincenters,center = mu[i], sigma=np.sqrt(variance[i]),height = amp[i])
+            pars += temppars
+            pars['f{}_center'.format(i)].set(expr='G+f{}_center'.format(i-1))
+            #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
+            print(pars)
+            mod += tempmod
 
-        plt.plot(mu,variance,label = 'Raw Data')
+    if len(mu):
+        result = mod.fit(n, pars, x=bincenters)
+        print(result.fit_report())
+        #plt.plot(bincenters,n,'y')
+        #plt.plot(mu,amp,'k+')
+        #print(pars.valuesdict())
+        print(result.params['G'].stderr)
+        vals = pars.valuesdict()
+        #plt.plot(bincenters,result.init_fit,'r--')
+        plt.plot(bincenters,result.best_fit,'k--',label = 'Gain = {:.2E} +/- {:.2E}'.format(result.params['G'].value,result.params['G'].stderr))
+        plt.legend(loc = 'best')
+    # if len(mu) > 3:
+    #     X = mu
+    #     NewX = mu/abs(mu[1]) #this alters the behavior of the distribution!!!!
+    #     #plt.plot(newmu[1:],amp[1:],'k+')
+    #     area = sum(amp*NewX)
+    #     Y = amp/area
+    #     p0= [NewX[1],Y[1]]
+    #     bounds = [(NewX[0],0),(NewX[-1],10)]
+    #     #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y),bounds = bounds)
+    #     res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
+    #     print(res)
+    #     x_plot = np.linspace(0,2*NewX[-1], 1000)
+    # else:
+    #     X = bincenters #this alters the behavior of the distribution!!!!
+    #     NewX = bincenters/bincenters[np.where(n==np.max(n))[0][0]]#plt.plot(newmu[1:],amp[1:],'k+')
+    #     area = np.trapz(n,dx = abs(bincenters[1]-bincenters[0]))
+    #     Y = n/area
+    #     p0= [NewX[1],Y[1]]
+    #     bounds = [(NewX[0],0),(NewX[-1],np.inf)]
+    #     #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001),bounds = bounds)
+    #     res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
+    #     print(res)
+    #     x_plot = np.linspace(0,2*NewX[-1], 1000)
+    # true_x = np.linspace(X[0],2*X[-1], 1000)
+    # p = poisson(res.x,x_plot)
+    # p = p*(max(n)/max(p))
+    # plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
 
-<<<<<<< HEAD
+    # if len(mu) > 3:
+    #     newmu = mu/mu[0] #this alters the behavior of the distribution!!!!
+    #     #plt.plot(newmu[1:],amp[1:],'k+')
+    #     amp = amp
+    #     p0= [1,amp[1]*10]
+    #     bounds = [(0,0),(5,10*amp[1])]
+    #     parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
+    #     x_plot = np.linspace(0,2*newmu[-1], 1000)
+    #     true_x = np.linspace(0,2* mu[-1], 1000)
+    #     plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
+    #
+    # plt.legend(loc='best')
+    # plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
+    # if len(mu) > 3:
+    #     plt.figure()
+    #     plt.ylabel(r'$\sigma^2$ $(\frac{pC}{e})^2$')
+    #     plt.xlabel(r'$\mu$ ($\frac{pC}{e}$)')
+    #     #plt.gca().yaxis.set_major_formatter(formatter1)
+    #     p = np.polyfit(mu, variance, 1)
+    #
+    #     plt.plot(mu,variance,label = 'Raw Data')
+    # print(p)
 
-        print(p)
-=======
->>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
     Text = []
     if 1 in NumberofChannels:
         [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
