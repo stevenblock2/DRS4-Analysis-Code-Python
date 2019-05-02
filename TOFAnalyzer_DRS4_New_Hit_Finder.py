@@ -570,6 +570,7 @@ for FileName in FileNames:
         #plt.plot(bincenters,result.init_fit,'r--')
         plt.plot(bincenters,result.best_fit,'k--',label = 'Gain = {:.2E} +/- {:.2E}'.format(result.params['G'].value,result.params['G'].stderr))
         plt.legend(loc = 'best')
+    plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     # if len(mu) > 3:
     #     X = mu
     #     NewX = mu/abs(mu[1]) #this alters the behavior of the distribution!!!!
@@ -610,7 +611,7 @@ for FileName in FileNames:
     #     plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
     #
     # plt.legend(loc='best')
-    # plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
+    #
     # if len(mu) > 3:
     #     plt.figure()
     #     plt.ylabel(r'$\sigma^2$ $(\frac{pC}{e})^2$')
