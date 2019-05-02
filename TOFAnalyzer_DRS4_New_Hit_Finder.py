@@ -558,7 +558,10 @@ for FileName in FileNames:
             #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
             print(pars)
             mod += tempmod
-
+    background = GaussianModel(prefix = 'background_')
+    background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
+    pars+=background_pars
+    mod+=background
     if len(mu):
         result = mod.fit(n, pars, x=bincenters)
         print(result.fit_report())
