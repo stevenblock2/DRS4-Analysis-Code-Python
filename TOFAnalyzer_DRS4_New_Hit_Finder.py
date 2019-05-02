@@ -14,7 +14,6 @@ Future work:
     - Multiple peaks per events
     - more configuration settings?
 """
-#!/usr/bin/env python
 import sys
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3!!!!")
