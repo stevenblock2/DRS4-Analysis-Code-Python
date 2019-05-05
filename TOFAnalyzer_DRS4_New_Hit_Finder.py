@@ -400,6 +400,8 @@ FileNames = askopenfilenames(
 with DRS4BinaryFile(FileNames[0]) as events:
     length = len(list(events))
 itertor = 1
+GainArray = []
+GainErrorArray = []
 for FileName in FileNames:
     directory = os.path.dirname(FileName)
     newDirectory = os.path.join(directory,FileName[:-4])
@@ -596,23 +598,25 @@ for FileName in FileNames:
     background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
     pars+=background_pars
     mod+=background
-    if len(mu):
-        result = mod.fit(n, pars, x=bincenters)
-        print(result.fit_report())
-        #plt.plot(bincenters,n,'y')
-        #plt.plot(mu,amp,'k+')
-        #print(pars.valuesdict())
-        #print(result.params['G'].stderr)
-        vals = pars.valuesdict()
-        #print(result.params['G'].value)
-        GainError = result.params['G'].stderr
-        Gain = result.params['G'].value
-        if GainError == None:
-            GainError = 0.0
-            print('Error approximation failed!')
 
-        plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}'.format(Gain,GainError))
-        plt.legend(loc = 'best')
+    result = mod.fit(n, pars, x=bincenters)
+    print(result.fit_report())
+    #plt.plot(bincenters,n,'y')
+    #plt.plot(mu,amp,'k+')
+    #print(pars.valuesdict())
+    #print(result.params['G'].stderr)
+    vals = pars.valuesdict()
+    #print(result.params['G'].value)
+    GainError = result.params['G'].stderr
+    Gain = result.params['G'].value
+
+    if GainError == None:
+        GainError = 1
+        print('Error approximation failed!')
+    GainArray.append(Gain)
+    GainErrorArray.append(GainError)
+    plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}'.format(Gain,GainError))
+    plt.legend(loc = 'best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     # if len(mu) > 3:
     #     X = mu
@@ -689,4 +693,24 @@ for FileName in FileNames:
 if len(FileNames) == 1:
     plt.show()
 else:
+    GainPlotting = str(input("Voltage Based Gain Plotting? (y/n): "))
+    plt.figure()
+    if GainPlotting == 'y':
+        LowVoltage = float(input("Lower Voltage?: "))
+        HighVoltage = float(input("Higher Voltage?: "))
+        Breakdown = float(input("Breakdown Voltage?: "))
+        X = np.linspace(LowVoltage,HighVoltage,len(GainArray)) - Breakdown
+        plt.xlabel('Breakdown Voltage (V)')
+    else:
+        X = np.arange(0,len(GainArray))
+        print(X,GainArray,GainErrorArray)
+        #plt.errorbar(voltages, GainArray, yerr=GainErrorArray, fmt='o')
+        plt.errorbar(X, GainArray, yerr=GainErrorArray, fmt='o')
+        p = np.polyfit(X,GainArray,deg = 1,w=GainErrorArray)
+        p = np.poly1d(p)
+        plt.plot(X,p(X),label ='m = {:.2E}, b = {:.2E}'.format(p[0],p[1]))
+        plt.legend(loc = 'best')
+        plt.ylabel('Gain')
+        plt.savefig('Gain_Plot.png')
     print("Analysis of Files Complete!")
+    plt.show()
