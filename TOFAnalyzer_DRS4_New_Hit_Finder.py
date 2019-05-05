@@ -365,18 +365,34 @@ def ChargeCalculator(Y,startIndex,EndIndex):
     e = 1.602E-19
     return (np.trapz(Y[startIndex:EndIndex],dx = .2E-9)*C/e)
 
-def get_hist(ax):
+def get_hist(ax,nbins):
     n,bins = [],[]
+    finaln,finalbins = [],[]
+    bin = 0
+    iteration = 0
     for rect in ax.patches:
         ((x0, y0), (x1, y1)) = rect.get_bbox().get_points()
         n.append(y1-y0)
         bins.append(x0) # left edge of each bin
+    finaln = [n[i:i + nbins] for i in range(0, len(n), nbins)]
+    finalbins = [bins[i:i + nbins] for i in range(0, len(bins), nbins)]
+    print(finaln)
+    i = 0
+    for (arrayn,arrabins) in zip(finaln,finalbins):
+        if i ==0:
+            n = arrayn
+            bins = arrabins
+        else:
+            n = [n[i]+arrayn[i] for i in range(0,len(arrayn))]
+        i+=1
+
+
     bins.append(x1) # also get right edge of last bin
 
     return np.asarray(n,dtype=np.float32),np.asarray(bins,dtype=np.float32)
 
 def FindHistPeaks(Y):
-    peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 5,distance = 15)
+    peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 2,distance = 15)
     return peaks,properties
 
 FileNames = askopenfilenames(
@@ -432,7 +448,8 @@ for FileName in FileNames:
                             PulseHeight = hitAmplitude
                             Charge = ChargeCalculator(Data,startIndex,EndIndex)
                             PeakTime =  Time[hitAmplitudeIndex]
-                            TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise]})
+                            ChargePedestle = ChargeCalculator(Data,0,50)
+                            TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise],'7':[ChargePedestle]})
                             #print(TempData)
                             if eventNumber % SubDivider == 0:
                                 plt.plot(Time,Data,'k')
@@ -454,9 +471,9 @@ for FileName in FileNames:
     plt.savefig(os.path.join(newDirectory,'Persistance.png'))
     for i in NumberofChannels:
         if i == NumberofChannels[0]:
-            columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)]
+            columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i)]
         else:
-            columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i)])
+            columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i)])
 
     if 1 == NumberofChannels[0]:
         Data = Data1
@@ -484,12 +501,12 @@ for FileName in FileNames:
     PulseHeightColumns = []
     PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
     PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
-    ChargeColumns = [column for column in columnNames if "Charge" in column]
-    histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False)
+    ChargeColumns = [column for column in columnNames if "Cummulative Charge" in column]
+    histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False,sharex = True)
     plt.xlabel('Pulse Height (mV)')
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
 
-    histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False)
+    histCharge = Data.plot.hist(y = ChargeColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Area Distribution',log=False,sharex = True)
     plt.xlabel(r'Area ($\frac{pC}{e}$)')
     plt.legend(ChargeColumns)
 
@@ -504,44 +521,52 @@ for FileName in FileNames:
     lammaList = []
 
     amp = []
-    n, bins = get_hist(histCharge)
+
+    n, bins = get_hist(histCharge,1000)
+
     bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
+
     peaks,properties = FindHistPeaks(n)
+    plt.plot(bincenters[peaks],n[peaks],'g+')
     widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     j = 0
     scale = .5
     for (peak,width) in zip(peaks,widths[0]):
-        #true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-        X = bincenters[int(peak - width):int(peak + width)]
-        Y = n[int(peak - width):int(peak + width)]
-        mean,std = weighted_avg_and_std(X,Y)
-        p0 = [n[peak], mean, std]
-        bounds = [(0,.5*mean,.5*std),(n[peak],1.5*mean,1.5*std)]
-        res = least_squares(gaussMinimizer, p0, loss='linear', f_scale=scale,args=(X,Y),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-        #coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-        fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-        hist_fit = gauss(fixed_range, *res.x)
-        #plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
-        mu.append(res.x[1])
-        variance.append(res.x[2]**2)
-        amp.append(res.x[0])
+        try:
+            true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+            X = bincenters[int(peak - width):int(peak + width)]
+            Y = n[int(peak - width):int(peak + width)]
+            mean,std = weighted_avg_and_std(X,Y)
+            p0 = [n[peak], mean, std]
+            bounds = [(0,.5*mean,.5*std),(n[peak],1.5*mean,1.5*std)]
+            res = least_squares(gaussMinimizer, p0, loss='linear', f_scale=scale,args=(X,Y),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
+            # coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+            # #fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
+            #hist_fit = gauss(fixed_range, *res.x)
+            #plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
 
-        #         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-        #         p0 = [n[peak], bincenters[peak], .7*true_width]
-        #         bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
-        #         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-        #         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-        #         hist_fit = gauss(fixed_range, *coeff)
-        #         print(coeff)
-        #         plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
-        #         mu.append(coeff[1])
-        #         variance.append(coeff[2]**2)
-        #         amp.append(coeff[0])
-        # >>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
-        # if j == 0:
-        #     lamma = -np.log(coeff[1])
-        # if j != 0:
-        #     lamma = -np.log(coeff[1])+ coeff[1]
+            mu.append(res.x[1])
+            variance.append(res.x[2]**2)
+            amp.append(res.x[0])
+
+            #         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
+            #         p0 = [n[peak], bincenters[peak], .7*true_width]
+            #         bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
+            #         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
+            #         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
+            #         hist_fit = gauss(fixed_range, *coeff)
+            #         print(coeff)
+            #         plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
+            #         mu.append(coeff[1])
+            #         variance.append(coeff[2]**2)
+            #         amp.append(coeff[0])
+            # >>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
+            # if j == 0:
+            #     lamma = -np.log(coeff[1])
+            # if j != 0:
+            #     lamma = -np.log(coeff[1])+ coeff[1]
+        except:
+            pass
         print(mu,len(mu))
         j = j+1
 
@@ -549,14 +574,23 @@ for FileName in FileNames:
         if i == 0:
             mod = GaussianModel(prefix = 'f{}_'.format(i))
             pars = mod.guess(n,x=bincenters, sigma=np.sqrt(variance[i]),height = amp[i],center = mu[i])
-            pars.add('G',value = mu[i+1]-mu[i],brute_step=.01*mu[i],min = .1*(mu[i+1]-mu[i]),max = 5*(mu[i+1]-mu[i]))
+            if len(mu) >=2:
+                pars.add('G',value = mu[i+1]-mu[i],brute_step=.01*mu[i],min = .1*(mu[i+1]-mu[i]),max = 5*(mu[i+1]-mu[i]))
         else:
             tempmod =  GaussianModel(prefix = 'f{}_'.format(i))
             temppars = tempmod.guess(n,x=bincenters,center = mu[i], sigma=np.sqrt(variance[i]),height = amp[i])
             pars += temppars
             pars['f{}_center'.format(i)].set(expr='G+f{}_center'.format(i-1))
             #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
-            print(pars)
+            mod += tempmod
+    if len(mu) < 2:
+        pars.add('G',value = 1E8,brute_step=1E6,min = 1E6,max = 1E9)
+        for j in range(len(mu),len(mu)+2):
+            tempmod =  GaussianModel(prefix = 'f{}_'.format(j))
+            temppars = tempmod.guess(n,x=bincenters)
+            pars += temppars
+            pars['f{}_center'.format(j)].set(expr='G+f{}_center'.format(j-1))
+            #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
             mod += tempmod
     background = GaussianModel(prefix = 'background_')
     background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
@@ -568,10 +602,16 @@ for FileName in FileNames:
         #plt.plot(bincenters,n,'y')
         #plt.plot(mu,amp,'k+')
         #print(pars.valuesdict())
-        print(result.params['G'].stderr)
+        #print(result.params['G'].stderr)
         vals = pars.valuesdict()
-        #plt.plot(bincenters,result.init_fit,'r--')
-        plt.plot(bincenters,result.best_fit,'k--',label = 'Gain = {:.2E} +/- {:.2E}'.format(result.params['G'].value,result.params['G'].stderr))
+        #print(result.params['G'].value)
+        GainError = result.params['G'].stderr
+        Gain = result.params['G'].value
+        if GainError == None:
+            GainError = 0.0
+            print('Error approximation failed!')
+
+        plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}'.format(Gain,GainError))
         plt.legend(loc = 'best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     # if len(mu) > 3:
