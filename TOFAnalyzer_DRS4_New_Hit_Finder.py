@@ -40,7 +40,7 @@ install_and_import('pandas')
 import pandas as pd
 from math import *
 install_and_import('scipy')
-from scipy.stats import poisson
+#from scipy.stats import poisson
 from tkinter.filedialog import askopenfilename,askopenfilenames
 import tkinter as tk
 import os
@@ -57,12 +57,12 @@ from lmfit.models import GaussianModel
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 def poisson(p,k):
-    lamb,amp=p[0],p[1]
-    return amp*(lamb**(k))/factorial(k) * np.exp(-lamb)
+    lamb,amp,scaler=p[0],p[1],p[2]
+    return amp*(lamb**(k/scaler))/factorial(k/scaler) * np.exp(-lamb)
 
 def poissonMinimizer(p,k,Y):
-    lamb,amp= p[0],p[1]
-    lnl = amp*((lamb**(k))/factorial(k) * np.exp(-lamb)-Y)
+    lamb,amp,scaler=p[0],p[1],p[2]
+    lnl = amp*(lamb**(k/scaler))/factorial(k/scaler) * np.exp(-lamb)-Y
     return np.log(lnl**2)
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
@@ -132,15 +132,13 @@ def hifinderScipy(p):
     hitEndIndexList = []
     hitPeakAmplitude = []
     hitPeakIndexArray = []
-    Max = abs(max(p))
-    Min = abs(min(p))
-    if Max > Min and max(p) > baseline + NoiseSigma*noiserms:
-        peaks, properties = scipy.signal.find_peaks(p, prominence=.003, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
-        # plt.plot(Y)
-        # plt.fill_between(np.arange(0,1024),y1 = - NoiseSigma*noiserms,y2 =  NoiseSigma*noiserms,alpha = .1)
-        # plt.show()
-    elif Min > Max and min(p) < baseline - NoiseSigma*noiserms:
-        peaks, properties = scipy.signal.find_peaks(-p, prominence=.003, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
+    Max = abs(max(p[100:900]))
+    Min = abs(min(p[100:900]))
+    #print(baseline - (baseline-NoiseSigma*noiserms))
+    if Max > Min and max(p[100:900]) > baseline + NoiseSigma*noiserms:
+        peaks, properties = scipy.signal.find_peaks(p, prominence=.005, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
+    elif Min > Max and min(p[100:900]) < baseline - NoiseSigma*noiserms:
+        peaks, properties = scipy.signal.find_peaks(-p, prominence=.005, width=6,height = baseline - (baseline-NoiseSigma*noiserms))
     else:
         peaks, properties = [],{'widths':[]}
 
@@ -273,6 +271,7 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     """
     # Channel1Data is from first TOF
     # Channel2Data is from second TOF
+    hitAmplitude = Y[peakIndex]
     UpperThreshold = baseline - (.7 * (baseline - hitAmplitude))
     LowerThreshold = baseline - (.3 * (baseline - hitAmplitude))
     riseTimestart = 0
@@ -281,42 +280,37 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     fallIndex = 0
     diffs = Y[startIndex:peakIndex]-UpperThreshold
     value = np.min(abs(diffs))
+    noiserms = np.std(Y[:50])*5
+    YStart = Y[startIndex]
+    YSign  =np.sign(Y[startIndex])
     #print(value,diffs)
     #print(np.where(value == abs(diffs))[0][0])
     riseIndex = int(np.where(value == abs(diffs))[0][0]) + startIndex
     diffs = Y[startIndex:peakIndex]-LowerThreshold
     value = np.min(abs(diffs))
     fallIndex =  int(np.where(value == abs(diffs))[0][0]) + startIndex
-    # plt.plot(X,Y)
-    # plt.axvline(x = X[riseIndex],color = 'r')
-    # plt.axvline(x = X[peakIndex],color = 'g')
-    # plt.axvline(x = X[startIndex],color = 'b')`
-    # plt.show()`
     riseTimestart = Interpolator(X, Y, riseIndex-1,riseIndex+1,UpperThreshold)
     riseTimeend = Interpolator(X, Y, fallIndex-1,fallIndex+1,LowerThreshold)
-    # stop1 = 0
-    # stop2 = 0
-    # for i in range(peakIndex,startIndex,-1):
-    #     if Y[i] > UpperThreshold and Y[i-1] <= UpperThreshold and Y[peakIndex] > 0 and stop1 == 0:
-    #         riseIndex = i
-    #         stop1 = 1
-    #         riseTimestart = Interpolator(X, Y, riseIndex-1,riseIndex+1,UpperThreshold)
-    #     if Y[i] > LowerThreshold and Y[i-1] <= LowerThreshold and Y[peakIndex] > 0 and stop2 == 0:
-    #         fallIndex = i
-    #         stop2 = 1
-    #         riseTimeend = Interpolator(X, Y, fallIndex-1,fallIndex+1,LowerThreshold)
-    #
-    # for i in range(peakIndex,startIndex,-1):
-    #     if Y[i] < UpperThreshold and Y[i-1] >= UpperThreshold and Y[peakIndex] < 0 and stop1 == 0:
-    #         riseIndex = i
-    #         stop1 = 1
-    #         riseTimestart = Interpolator(X, Y, riseIndex-1,riseIndex+1,UpperThreshold)
-    #     if Y[i] < LowerThreshold and Y[i-1] >= LowerThreshold and Y[peakIndex] < 0 and stop2 == 0:
-    #         fallIndex = i
-    #         stop2 = 1
-    #         riseTimeend = Interpolator(X, Y, fallIndex-1,fallIndex+1,LowerThreshold)
-    #print(riseTimestart,riseTimeend)
+    #print(UpperThreshold,LowerThreshold)
+    if riseTimestart < X[startIndex] or riseTimestart > X[EndIndex] or riseTimeend < X[startIndex] or riseTimeend > X[EndIndex]:
+        return False
+    if riseTimestart - riseTimeend > (X[EndIndex] - X[startIndex]):
+        return False
+    if riseTimestart - riseTimeend <= 0:
+        return False
+    if riseIndex == 0 or fallIndex ==0:
+        return False
+    if YSign > 0:
+        if(YStart > baseline + noiserms):
+            return False
+    if YSign < 0:
+        if(YStart < baseline - noiserms):
+            return False
+    if len(np.unique(np.sign(np.diff(Y[fallIndex:startIndex])))) > 1:
+        return False
+
     return riseTimestart-riseTimeend
+
 
 
 
@@ -447,6 +441,8 @@ for FileName in FileNames:
                         for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
                             #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
                             RiseTime = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
+                            if RiseTime == False:
+                                continue
                             PulseHeight = hitAmplitude
                             Charge = ChargeCalculator(Data,startIndex,EndIndex)
                             PeakTime =  Time[hitAmplitudeIndex]
@@ -529,7 +525,7 @@ for FileName in FileNames:
     bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
 
     peaks,properties = FindHistPeaks(n)
-    plt.plot(bincenters[peaks],n[peaks],'g+')
+    #plt.plot(bincenters[peaks],n[peaks],'g+')
     widths = scipy.signal.peak_widths(n, peaks, rel_height=0.5)
     j = 0
     scale = .5
@@ -572,50 +568,82 @@ for FileName in FileNames:
         print(mu,len(mu))
         j = j+1
 
-    for i in range(0,len(mu)):
-        if i == 0:
+    for i in range(0,len(mu)+1):
+        if i == 0 and i < len(mu):
             mod = GaussianModel(prefix = 'f{}_'.format(i))
             pars = mod.guess(n,x=bincenters, sigma=np.sqrt(variance[i]),height = amp[i],center = mu[i])
             if len(mu) >=2:
                 pars.add('G',value = mu[i+1]-mu[i],brute_step=.01*mu[i],min = .1*(mu[i+1]-mu[i]),max = 5*(mu[i+1]-mu[i]))
-        else:
+            else:
+                pars.add('G',value = 1E8,min=1E5,max=1E10,brute_step = .1E5)
+        elif i >= len(mu) and i !=0:
+            tempmod =  GaussianModel(prefix = 'f{}_'.format(i))
+            temppars = tempmod.guess(n,x=bincenters)
+            pars += temppars
+            pars['f{}_center'.format(i)].set(expr='G+f{}_center'.format(i-1))
+            mod += tempmod
+        elif i < len(mu):
             tempmod =  GaussianModel(prefix = 'f{}_'.format(i))
             temppars = tempmod.guess(n,x=bincenters,center = mu[i], sigma=np.sqrt(variance[i]),height = amp[i])
             pars += temppars
             pars['f{}_center'.format(i)].set(expr='G+f{}_center'.format(i-1))
             #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
             mod += tempmod
-    if len(mu) < 2:
-        pars.add('G',value = 1E8,brute_step=1E6,min = 1E6,max = 1E9)
-        for j in range(len(mu),len(mu)+2):
-            tempmod =  GaussianModel(prefix = 'f{}_'.format(j))
-            temppars = tempmod.guess(n,x=bincenters)
-            pars += temppars
-            pars['f{}_center'.format(j)].set(expr='G+f{}_center'.format(j-1))
-            #pars['f{}_center'.format(i-1)].set(expr='G-f{}_center'.format(i))
-            mod += tempmod
-    background = GaussianModel(prefix = 'background_')
-    background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
-    pars+=background_pars
-    mod+=background
+        elif not len(mu) and i==0:
+            mod = GaussianModel(prefix = 'f{}_'.format(i))
+            pars = mod.guess(n,x=bincenters)
+            pars.add('G',value = 1E8,min=1E5,max=1E10,brute_step = .1E5)
+        else:
+            pass
+    # background = GaussianModel(prefix = 'background_')
+    # background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
+    # pars+=background_pars
+    # mod+=background
 
     result = mod.fit(n, pars, x=bincenters)
     print(result.fit_report())
     #plt.plot(bincenters,n,'y')
     #plt.plot(mu,amp,'k+')
-    #print(pars.valuesdict())
+    vals = result.params.valuesdict()
+    mu = []
+    amp = []
+    for (key,value) in vals.items():
+        if 'center' in key:
+            mu.append(value)
+        if 'height' in key:
+            amp.append(value)
+    mu = [0]+mu
+    amp = [0] +amp
+    print(mu,amp,)
+    plt.plot(mu,amp,'g+')
     #print(result.params['G'].stderr)
     vals = pars.valuesdict()
     #print(result.params['G'].value)
     GainError = result.params['G'].stderr
     Gain = result.params['G'].value
-
+    #print(result.params["*_center"])
     if GainError == None:
         GainError = 1
         print('Error approximation failed!')
     GainArray.append(Gain)
     GainErrorArray.append(GainError)
     plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}'.format(Gain,GainError))
+    if len(mu) >= 3:
+        newmu = mu #this alters the behavior of the distribution!!!!
+        #plt.plot(newmu[1:],amp[1:],'k+')
+        controlscalar = max(amp)
+        #amp = [x/sum(amp) for x in amp]
+        p0= [1,amp[1]*10,mu[1]]
+        bounds = [(0,0,mu[0]/10),(10,10*amp[1],mu[-1]*10)]
+        #parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
+        res = least_squares(poissonMinimizer, p0, loss='linear',args=(mu, amp),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
+        x_plot = np.linspace(mu[0],2*mu[-1], 1000)
+        #true_x = np.linspace(bincenters[0],bincentersp[-1], 1000)
+        #print(poisson(res.x,x_plot))
+        print(res.x)
+        fit = poisson(res.x,x_plot)
+        plt.plot(x_plot, fit, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
+
     plt.legend(loc = 'best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     # if len(mu) > 3:
@@ -646,17 +674,7 @@ for FileName in FileNames:
     # p = p*(max(n)/max(p))
     # plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
 
-    # if len(mu) > 3:
-    #     newmu = mu/mu[0] #this alters the behavior of the distribution!!!!
-    #     #plt.plot(newmu[1:],amp[1:],'k+')
-    #     amp = amp
-    #     p0= [1,amp[1]*10]
-    #     bounds = [(0,0),(5,10*amp[1])]
-    #     parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
-    #     x_plot = np.linspace(0,2*newmu[-1], 1000)
-    #     true_x = np.linspace(0,2* mu[-1], 1000)
-    #     plt.plot(true_x, poisson(x_plot, *parameters), 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(parameters[0],3)))
-    #
+
     # plt.legend(loc='best')
     #
     # if len(mu) > 3:
@@ -670,18 +688,11 @@ for FileName in FileNames:
     # print(p)
 
     Text = []
-    if 1 in NumberofChannels:
-        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 1 Rise Time'].values,np.ones(len(Data.index)))
-        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(1,ToFMean,TofStd))
-    if 2 in NumberofChannels:
-        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 2 Rise Time'].values,np.ones(len(Data.index)))
-        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(2,ToFMean,TofStd))
-    if 3 in NumberofChannels:
-        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 3 Rise Time'].values,np.ones(len(Data.index)))
-        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(3,ToFMean,TofStd))
-    if 4 in NumberofChannels:
-        [ToFMean, TofStd] = weighted_avg_and_std(Data['Channel 4 Rise Time'].values,np.ones(len(Data.index)))
-        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(4,ToFMean,TofStd))
+    for i in NumberofChannels:
+        values = Data['Channel {} Rise Time'.format(i)].values
+        values = [x for x in values if abs(x - np.mean(values)) < 3*np.std(values)]
+        [ToFMean, TofStd] = weighted_avg_and_std(values,np.ones(len(Data.index)))
+        Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(i,ToFMean,TofStd))
     ristimeColumns = [column for column in columnNames if "Rise Time" in column]
     histRiseTimes = Data.plot.hist(y =ristimeColumns,bins = 1000,alpha = .3,subplots=False,title = 'Rise Time Distributions')
     plt.legend(Text)
@@ -702,15 +713,18 @@ else:
         X = np.linspace(LowVoltage,HighVoltage,len(GainArray)) - Breakdown
         plt.xlabel('Breakdown Voltage (V)')
     else:
-        X = np.arange(0,len(GainArray))
+        X = [1,2,3,4,5.8,8]
         print(X,GainArray,GainErrorArray)
         #plt.errorbar(voltages, GainArray, yerr=GainErrorArray, fmt='o')
         plt.errorbar(X, GainArray, yerr=GainErrorArray, fmt='o')
-        p = np.polyfit(X,GainArray,deg = 1,w=GainErrorArray)
+        p = np.polyfit(X,GainArray,deg = 1)
         p = np.poly1d(p)
-        plt.plot(X,p(X),label ='m = {:.2E}, b = {:.2E}'.format(p[0],p[1]))
+        plt.plot(X,p(X),label =r'Fit: m = {:.2E}, b = {:.2E}, $\mu$ = {:.2E}'.format(p[1],p[0],np.mean(GainArray)))
+
         plt.legend(loc = 'best')
         plt.ylabel('Gain')
+        plt.xlabel('Light Intensity (A.U)')
+        plt.ylim(1E6,2E8)
         plt.savefig('Gain_Plot.png')
     print("Analysis of Files Complete!")
     plt.show()
