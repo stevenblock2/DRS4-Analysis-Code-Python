@@ -52,17 +52,21 @@ from matplotlib.ticker import EngFormatter
 from scipy.optimize import curve_fit,least_squares
 from scipy.misc import factorial
 from scipy.optimize import minimize
-from lmfit.models import GaussianModel
+from lmfit.models import GaussianModel,Model
 # Print iterations progress
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 def poisson(p,k):
-    lamb,amp,scaler=p[0],p[1],p[2]
-    return amp*(lamb**(k/scaler))/factorial(k/scaler) * np.exp(-lamb)
-
+    lamb,amp=p[0],p[1]
+    lnl = amp*(lamb**(k))/factorial(k) * np.exp(-lamb)
+    return lnl
+def PEModel(x,A,sigma,gain,mu,n):
+    prob = np.exp(-mu)*mu**n/factorial(n)
+    print(A,sigma,gain,mu,n)
+    return A*prob*[1/np.sqrt(2*np.pi*sigma)*np.exp((x-n*gain)**2/(2*sigma**2))]
 def poissonMinimizer(p,k,Y):
-    lamb,amp,scaler=p[0],p[1],p[2]
-    lnl = amp*(lamb**(k/scaler))/factorial(k/scaler) * np.exp(-lamb)-Y
+    lamb,amp=p[0],p[1]
+    lnl = amp*(lamb**(k))/factorial(k) * np.exp(-lamb)-Y
     return np.log(lnl**2)
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
@@ -538,36 +542,43 @@ for FileName in FileNames:
             p0 = [n[peak], mean, std]
             bounds = [(0,.5*mean,.5*std),(n[peak],1.5*mean,1.5*std)]
             res = least_squares(gaussMinimizer, p0, loss='linear', f_scale=scale,args=(X,Y),bounds = bounds,xtol = 1E-20,ftol = 1E-15,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-            # coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-            # #fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-            #hist_fit = gauss(fixed_range, *res.x)
-            #plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {:.3E}, $\sigma$ = {:.3E}".format(j,np.round(res.x[1],5),np.round(res.x[2],5)))
-
             mu.append(res.x[1])
             variance.append(res.x[2]**2)
             amp.append(res.x[0])
 
-            #         true_width = abs(bincenters[int(peak - width/2)]-bincenters[int(peak + width/2)])
-            #         p0 = [n[peak], bincenters[peak], .7*true_width]
-            #         bounds = [(0,bincenters[peak]-.8*abs(bincenters[peak]),0),(1.5*n[peak],bincenters[peak]+.8*abs(bincenters[peak]),.8*true_width)]
-            #         coeff, var_matrix = curve_fit(gauss, bincenters[int(peak - width/2):int(peak + width/2)], n[int(peak - width/2):int(peak + width/2)], p0=p0,bounds=bounds)
-            #         fixed_range = bincenters[int(peak - 2*width):int(peak + 2*width)]
-            #         hist_fit = gauss(fixed_range, *coeff)
-            #         print(coeff)
-            #         plt.plot(fixed_range, hist_fit,linewidth=2.0,label = r"$\mu_{}$ = {}, $\sigma$ = {}".format(j,np.round(coeff[1],3),np.round(coeff[2],3)))
-            #         mu.append(coeff[1])
-            #         variance.append(coeff[2]**2)
-            #         amp.append(coeff[0])
-            # >>>>>>> a657a6e154855458946bc6be4ebb0f321b58aaee
-            # if j == 0:
-            #     lamma = -np.log(coeff[1])
-            # if j != 0:
-            #     lamma = -np.log(coeff[1])+ coeff[1]
         except:
             pass
         print(mu,len(mu))
         j = j+1
 
+    # for i in range(0,len(mu)+1):
+    #     if i==0 and i < len(mu):
+    #         mod = Model(PEModel,prefix = 'f{}_'.format(i))
+    #         pars = mod.make_params(verbose = True)
+    #         pars['f{}_n'.format(i)].set(value = i+1,vary = False)
+    #         pars['f{}_A'.format(i)].set(value = amp[i],min = 0)
+    #         pars['f{}_mu'.format(i)].set(value = 1,min = 0,max = 100)
+    #         pars['f{}_sigma'.format(i)].set(min = 0,value = np.sqrt(variance[i]))
+    #         pars['f{}_gain'.format(i)].set(brute_step= 1E5,min = 1E5,max = 1E10,value = 1E8)
+    #     elif i == 0 and not len(mu):
+    #         mod = Model(PEModel,prefix = 'f{}_'.format(i))
+    #         pars = mod.make_params(verbose = True)
+    #         pars['f{}_n'.format(i)].set(value = i+1,vary = False)
+    #         pars['f{}_A'.format(i)].set(value = amp[i],min = 0)
+    #         pars['f{}_mu'.format(i)].set(value = 1,min = 0,max = 100)
+    #         pars['f{}_sigma'.format(i)].set(min = 0)
+    #         pars['f{}_gain'.format(i)].set(brute_step= 1E5,min = 1E5,max = 1E10,value = 1E8)
+    #     else:
+    #         tempmod = Model(PEModel,prefix = 'f{}_'.format(i))
+    #         temppars = tempmod.make_params(verbose = True)
+    #         temppars['f{}_n'.format(i)].set(value = i+1,vary = False)
+    #         mod+=tempmod
+    #         pars+=temppars
+    #         pars['f{}_gain'.format(i)].set(expr ='f{}_gain'.format(i-1) )
+    #         pars['f{}_mu'.format(i)].set(expr = 'f{}_mu'.format(i-1))
+    #         pars['f{}_sigma'.format(i)].set(min = 0)
+    #         pars['f{}_A'.format(i)].set(value = 50,min = 0)
+    #WORKING
     for i in range(0,len(mu)+1):
         if i == 0 and i < len(mu):
             mod = GaussianModel(prefix = 'f{}_'.format(i))
@@ -595,10 +606,6 @@ for FileName in FileNames:
             pars.add('G',value = 1E8,min=1E5,max=1E10,brute_step = .1E5)
         else:
             pass
-    # background = GaussianModel(prefix = 'background_')
-    # background_pars =  background.guess(n,x=bincenters, sigma=abs(bincenters[-1] - bincenters[0])/4,height = 10,center = (bincenters[-1]-bincenters[0])/2)
-    # pars+=background_pars
-    # mod+=background
 
     result = mod.fit(n, pars, x=bincenters)
     print(result.fit_report())
@@ -612,11 +619,10 @@ for FileName in FileNames:
             mu.append(value)
         if 'height' in key:
             amp.append(value)
-    mu = [0]+mu
-    amp = [0] +amp
-    print(mu,amp,)
+    mu = [0] +mu
+    amp = [0]+amp
+    #print(mu,amp)
     plt.plot(mu,amp,'g+')
-    #print(result.params['G'].stderr)
     vals = pars.valuesdict()
     #print(result.params['G'].value)
     GainError = result.params['G'].stderr
@@ -627,66 +633,20 @@ for FileName in FileNames:
         print('Error approximation failed!')
     GainArray.append(Gain)
     GainErrorArray.append(GainError)
-    plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}'.format(Gain,GainError))
-    if len(mu) >= 3:
-        newmu = mu #this alters the behavior of the distribution!!!!
-        #plt.plot(newmu[1:],amp[1:],'k+')
-        controlscalar = max(amp)
-        #amp = [x/sum(amp) for x in amp]
-        p0= [1,amp[1]*10,mu[1]]
-        bounds = [(0,0,mu[0]/10),(10,10*amp[1],mu[-1]*10)]
-        #parameters, cov_matrix = curve_fit(poisson, newmu, amp,p0=p0,sigma = 1/np.sqrt(amp))
-        res = least_squares(poissonMinimizer, p0, loss='linear',args=(mu, amp),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-        x_plot = np.linspace(mu[0],2*mu[-1], 1000)
-        #true_x = np.linspace(bincenters[0],bincentersp[-1], 1000)
-        #print(poisson(res.x,x_plot))
-        print(res.x)
-        fit = poisson(res.x,x_plot)
-        plt.plot(x_plot, fit, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
+    lamd = 0
+    if len(mu) >= 2:
+        newmu =  np.arange(0,len(mu)) #print(result.params['G'].stderr)
+        newamp = np.array(amp)#/np.linalg.norm(amp) #[x/np.linalg.norm(amp) for x in amp]
+        p0= [1,newamp[1]*10]
+        bounds = [(0,newamp[1]),(newmu[-1],20*newamp[1])]
+        res = least_squares(poissonMinimizer, p0, loss='linear',args=(newmu, newamp),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
+        fit = poisson(res.x,newmu)
+        lamd = res.x[0]
+        #plt.stem(newmu*Gain, fit, 'r--',label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
+    plt.plot(bincenters,result.best_fit,'k',label = 'Gain = {:.2e} +/- {:.2e}, <$\mu$> = {}'.format(Gain,GainError,np.round(lamd,3)))
 
     plt.legend(loc = 'best')
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
-    # if len(mu) > 3:
-    #     X = mu
-    #     NewX = mu/abs(mu[1]) #this alters the behavior of the distribution!!!!
-    #     #plt.plot(newmu[1:],amp[1:],'k+')
-    #     area = sum(amp*NewX)
-    #     Y = amp/area
-    #     p0= [NewX[1],Y[1]]
-    #     bounds = [(NewX[0],0),(NewX[-1],10)]
-    #     #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y),bounds = bounds)
-    #     res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,xtol = 1E-20,gtol = 1E-50,ftol = 1E-20,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-    #     print(res)
-    #     x_plot = np.linspace(0,2*NewX[-1], 1000)
-    # else:
-    #     X = bincenters #this alters the behavior of the distribution!!!!
-    #     NewX = bincenters/bincenters[np.where(n==np.max(n))[0][0]]#plt.plot(newmu[1:],amp[1:],'k+')
-    #     area = np.trapz(n,dx = abs(bincenters[1]-bincenters[0]))
-    #     Y = n/area
-    #     p0= [NewX[1],Y[1]]
-    #     bounds = [(NewX[0],0),(NewX[-1],np.inf)]
-    #     #parameters, cov_matrix = curve_fit(poisson, NewX, Y,p0=p0,sigma = 1/np.sqrt(Y+.0001),bounds = bounds)
-    #     res = least_squares(poissonMinimizer, p0, loss='linear', f_scale=scale,args=(NewX, Y),bounds=bounds,gtol = 1E-50,xtol = 1E-50,ftol = 1E-50,x_scale = 'jac',tr_solver = 'lsmr',max_nfev=1E4)
-    #     print(res)
-    #     x_plot = np.linspace(0,2*NewX[-1], 1000)
-    # true_x = np.linspace(X[0],2*X[-1], 1000)
-    # p = poisson(res.x,x_plot)
-    # p = p*(max(n)/max(p))
-    # plt.plot(true_x,p, 'r--', lw=2,label =r"<$\mu$> = {}".format(np.round(res.x[0],3)))
-
-
-    # plt.legend(loc='best')
-    #
-    # if len(mu) > 3:
-    #     plt.figure()
-    #     plt.ylabel(r'$\sigma^2$ $(\frac{pC}{e})^2$')
-    #     plt.xlabel(r'$\mu$ ($\frac{pC}{e}$)')
-    #     #plt.gca().yaxis.set_major_formatter(formatter1)
-    #     p = np.polyfit(mu, variance, 1)
-    #
-    #     plt.plot(mu,variance,label = 'Raw Data')
-    # print(p)
-
     Text = []
     for i in NumberofChannels:
         values = Data['Channel {} Rise Time'.format(i)].values
