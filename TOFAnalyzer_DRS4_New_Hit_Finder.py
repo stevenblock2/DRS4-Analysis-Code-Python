@@ -36,17 +36,18 @@ def install_and_import(package):
         globals()[package] = importlib.import_module(package)
 
 install_and_import('matplotlib')
-import matplotlib.pyplot as plt
 install_and_import('numpy')
+install_and_import('scipy')
+install_and_import('uncertainties')
+install_and_import('pandas')
+install_and_import('lmfit')
+import matplotlib.pyplot as plt
 import numpy as np
 import struct
 import array
-install_and_import('uncertainties')
 from uncertainties import ufloat
-install_and_import('pandas')
 import pandas as pd
 from math import *
-install_and_import('scipy')
 #from scipy.stats import poisson
 from tkinter.filedialog import askopenfilename,askopenfilenames
 import tkinter as tk
