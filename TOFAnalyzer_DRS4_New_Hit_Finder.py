@@ -15,16 +15,23 @@ Future work:
     - more configuration settings?
 """
 import sys
+import subprocess
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3!!!!")
+try:
+    import pip
+except ImportError:
+    print("Pip not present on system! Installing Pip...")
+    try:
+        subprocess.call([sys.executable, "easy_install", "python3-pip"])
+    except:
+        print('Could not install pip automatically, please install pip manually by typing "easy_install pip" into your terminal application')
 def install_and_import(package):
     import importlib
-
     try:
         importlib.import_module(package)
-    except ImportError:
-        import subprocess
-        subprocess.call(['pip', 'install', package])
+    except:
+        subprocess.call([sys.executable, "-m", "pip", "install", package])
     finally:
         globals()[package] = importlib.import_module(package)
 
