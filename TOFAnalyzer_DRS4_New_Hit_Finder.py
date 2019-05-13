@@ -23,6 +23,7 @@ try:
 except ImportError:
     print("Pip not present on system! Installing Pip...")
     try:
+        subprocess.call([sys.executable,'-m','ensurepip','--default-pip'])
         subprocess.call([sys.executable, "easy_install", "python3-pip"])
     except:
         print('Could not install pip automatically, please install pip manually by typing "easy_install pip" into your terminal application')
