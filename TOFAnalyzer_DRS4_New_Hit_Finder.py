@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 """
 October 25, 2018
 Author: Steven Block
@@ -43,6 +44,10 @@ install_and_import('scipy')
 install_and_import('uncertainties')
 install_and_import('pandas')
 install_and_import('lmfit')
+install_and_import('tqdm')
+from tqdm import tqdm
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 import struct
@@ -50,8 +55,12 @@ import array
 import pandas as pd
 from math import *
 #from scipy.stats import poisson
-from tkinter.filedialog import askopenfilename,askopenfilenames
-import tkinter as tk
+try:
+    import Tkinter as tk # this is for python2
+except:
+    import tkinter as tk # this is for python3
+#from tkinter.filedialog import askopenfilename,askopenfilenames
+from tkfilebrowser import askopenfilenames
 import os
 import scipy.signal as scisig
 from drs4 import DRS4BinaryFile
@@ -78,7 +87,7 @@ def poissonMinimizer(p,k,Y):
     lnl = amp*(lamb**(k))/factorial(k) * np.exp(-lamb)-Y
     return np.log(lnl**2)
 
-def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '*'):
     """
     Call in a loop to create terminal progress bar
     @params:
@@ -327,8 +336,6 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
 
 
 
-root = tk.Tk()
-root.withdraw()
 def Lowpass(Y):
     CutoffFreq = 5000
     pedestle = list(Y[:50])
@@ -402,22 +409,25 @@ def FindHistPeaks(Y):
     peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 2,distance = 15)
     return peaks,properties
 
+root = tk.Tk()
+root.withdraw()
+print('I owe a million dollars!')
 
-
-FileNames = askopenfilenames(
-    filetypes=[("Binary Files", "*.dat")])
+FileNames = askopenfilenames(parent=root, initialfile='tmp',
+                           filetypes=[("Binary Files", "*.dat")])
 with DRS4BinaryFile(FileNames[0]) as events:
     length = len(list(events))
 itertor = 1
 GainArray = []
 GainErrorArray = []
-for FileName in FileNames:
+
+for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
+    FileName = FileNames[i]
     directory = os.path.dirname(FileName)
     newDirectory = os.path.join(directory,FileName[:-4])
     path,name = os.path.split(FileName)
     if not os.path.exists(newDirectory):
         os.mkdir(newDirectory)
-    print('Processing: {} - ({} of {})'.format(os.path.basename(FileName),itertor,len(FileNames)))
     with DRS4BinaryFile(FileName) as events:
         length = len(list(events))
     Data1 = pd.DataFrame()
@@ -440,8 +450,9 @@ for FileName in FileNames:
         Time = np.arange(0,1024)*.2
 
         eventNumber = 0
-        printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
-        for event in list(f):
+        #printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        for i in tqdm(range(length),'Events',dynamic_ncols=True,unit = 'Events'):
+            event = next(f) 
             RC = event.range_center
             ADCData = event.adc_data
             triggerCell = event.trigger_cells[BoardID]
@@ -478,7 +489,7 @@ for FileName in FileNames:
                             if i == 4:
                                 Data4 = Data4.append(TempData,ignore_index=True)
             #sleep(0.001)
-            printProgressBar(eventNumber + 1, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
+            #printProgressBar(eventNumber + 1, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
             eventNumber = eventNumber + 1
     columnNames = []
     plt.savefig(os.path.join(newDirectory,'Persistance.png'))
@@ -674,6 +685,7 @@ for FileName in FileNames:
         plt.close('all')
 if len(FileNames) == 1:
     plt.show()
+    #sys.exit()
 else:
     GainPlotting = str(input("Voltage Based Gain Plotting? (y/n): "))
     plt.figure()
@@ -699,3 +711,4 @@ else:
         plt.savefig('Gain_Plot.png')
     print("Analysis of Files Complete!")
     plt.show()
+#sys.exit()
