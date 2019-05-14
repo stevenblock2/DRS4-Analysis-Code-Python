@@ -16,15 +16,16 @@ Future work:
 """
 import sys
 import subprocess
-if sys.version_info[0] < 3:
-    raise Exception("Must be using Python 3!!!!")
+print(sys.version_info[1])
+if sys.version_info[0] < 3 and sys.version_info[1] < 7:
+        raise Exception("Must be using Python 3.7!!!!")
 try:
     import pip
 except ImportError:
     print("Pip not present on system! Installing Pip...")
     try:
-        subprocess.call([sys.executable,'-m','ensurepip','--default-pip'])
-        subprocess.call([sys.executable, "easy_install", "python3-pip"])
+        subprocess.call([sys.executable,'-m','ensurepip','--default-pip'],shell =True)
+        subprocess.call([sys.executable, "easy_install", "python3-pip"],shell =True)
     except:
         print('Could not install pip automatically, please install pip manually by typing "easy_install pip" into your terminal application')
 def install_and_import(package):
@@ -46,7 +47,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import struct
 import array
-from uncertainties import ufloat
 import pandas as pd
 from math import *
 #from scipy.stats import poisson
@@ -401,6 +401,8 @@ def get_hist(ax,nbins):
 def FindHistPeaks(Y):
     peaks, properties  = scipy.signal.find_peaks(Y, width=10,height =5,prominence= 2,distance = 15)
     return peaks,properties
+
+
 
 FileNames = askopenfilenames(
     filetypes=[("Binary Files", "*.dat")])
