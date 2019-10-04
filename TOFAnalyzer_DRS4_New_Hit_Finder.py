@@ -113,6 +113,8 @@ def weighted_avg_and_std(values, weights):
 
     values, weights -- Numpy ndarrays with the same shape.
     """
+    values = np.array(values)
+    values = values[np.isfinite(values)]
     average = np.nanmean(values)
     # Fast and numerically precise:
     std = np.nanstd(values)
@@ -452,7 +454,7 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
         eventNumber = 0
         #printProgressBar(0, length, prefix = 'Progress:', suffix = 'Complete', length = 50)
         for i in tqdm(range(length),'Events',dynamic_ncols=True,unit = 'Events'):
-            event = next(f) 
+            event = next(f)
             RC = event.range_center
             ADCData = event.adc_data
             triggerCell = event.trigger_cells[BoardID]
@@ -671,8 +673,9 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     plt.savefig(os.path.join(newDirectory,'Pulse_Area_Distribution.png'))
     Text = []
     for i in NumberofChannels:
-        values = Data['Channel {} Rise Time'.format(i)].values
-        values = [x for x in values if abs(x - np.mean(values)) < 3*np.std(values)]
+        values = np.array(Data['Channel {} Rise Time'.format(i)].values)
+        values = values[np.isfinite(values)]
+        values = [x for x in values if abs(x - np.nanmean(values)) < 3*np.std(values)]
         [ToFMean, TofStd] = weighted_avg_and_std(values,np.ones(len(Data.index)))
         Text.append(r'$\tau_{}: \mu = {}ns; \sigma = {}ns$'.format(i,ToFMean,TofStd))
     ristimeColumns = [column for column in columnNames if "Rise Time" in column]
@@ -683,6 +686,10 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     itertor = itertor +1
     if len(FileNames) != 1:
         plt.close('all')
+#TOF Plotting
+#if len(NumberofChannels) >1:
+#    for i in NumberofChannels:
+#        Data["Channel {} Pulse Start".format(i)] = 
 if len(FileNames) == 1:
     plt.show()
     #sys.exit()
