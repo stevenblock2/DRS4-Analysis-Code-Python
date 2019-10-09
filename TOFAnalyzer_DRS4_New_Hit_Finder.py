@@ -17,6 +17,7 @@ Future work:
 """
 import sys
 import subprocess
+import timeFinder as tf
 print(sys.version_info[1])
 if sys.version_info[0] < 3 and sys.version_info[1] < 7:
         raise Exception("Must be using Python 3.7!!!!")
@@ -45,6 +46,7 @@ install_and_import('uncertainties')
 install_and_import('pandas')
 install_and_import('lmfit')
 install_and_import('tqdm')
+from itertools import combinations
 from tqdm import tqdm
 import matplotlib
 matplotlib.use('TkAgg')
@@ -316,24 +318,27 @@ def RisetimeFinder(X, Y,startIndex,peakIndex,baseline):
     riseTimestart = Interpolator(X, Y, riseIndex-1,riseIndex+1,UpperThreshold)
     riseTimeend = Interpolator(X, Y, fallIndex-1,fallIndex+1,LowerThreshold)
     #print(UpperThreshold,LowerThreshold)
+    result = dict()
+    result['risetime'] = riseTimestart-riseTimeend
+    result['starttime'] = riseTimeend
     if riseTimestart < X[startIndex] or riseTimestart > X[EndIndex] or riseTimeend < X[startIndex] or riseTimeend > X[EndIndex]:
-        return False
+        result['risetime']= False
     if riseTimestart - riseTimeend > (X[EndIndex] - X[startIndex]):
-        return False
+        result['risetime']= False
     if riseTimestart - riseTimeend <= 0:
-        return False
+        result['risetime']= False
     if riseIndex == 0 or fallIndex ==0:
-        return False
+        result['risetime']= False
     if YSign > 0:
         if(YStart > baseline + noiserms):
-            return False
+            result['risetime']= False
     if YSign < 0:
         if(YStart < baseline - noiserms):
-            return False
+            result['risetime']= False
     if len(np.unique(np.sign(np.diff(Y[fallIndex:startIndex])))) > 1:
-        return False
+        result['risetime']= False
 
-    return riseTimestart-riseTimeend
+    return result
 
 
 
@@ -392,7 +397,7 @@ def get_hist(ax,nbins):
         bins.append(x0) # left edge of each bin
     finaln = [n[i:i + nbins] for i in range(0, len(n), nbins)]
     finalbins = [bins[i:i + nbins] for i in range(0, len(bins), nbins)]
-    print(finaln)
+    #print(finaln)
     i = 0
     for (arrayn,arrabins) in zip(finaln,finalbins):
         if i ==0:
@@ -468,14 +473,15 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
                     if hitStartIndexList:
                         for (startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex) in zip(hitStartIndexList,hitEndIndexList,hitPeakAmplitude,hitPeakIndexArray):
                             #print(startIndex,EndIndex,hitAmplitude,hitAmplitudeIndex)
-                            RiseTime = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
+                            resultrt = RisetimeFinder(Time,Data,startIndex,hitAmplitudeIndex,baseline)
+                            RiseTime,StartTime = resultrt['risetime'],resultrt['starttime']
                             if RiseTime == False:
                                 continue
                             PulseHeight = hitAmplitude
                             Charge = ChargeCalculator(Data,startIndex,EndIndex)
                             PeakTime =  Time[hitAmplitudeIndex]
                             ChargePedestle = ChargeCalculator(Data,0,50)
-                            TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise],'7':[ChargePedestle]})
+                            TempData = pd.DataFrame(data = {'0':[RiseTime],'1':[PulseHeight],'2':[Charge],'3':[PeakTime],'4':[rmsnoise],'5':[baseline],'6':[baseline+rmsnoise],'7':[ChargePedestle],'8':[StartTime]})
                             #print(TempData)
                             if eventNumber % SubDivider == 0:
                                 plt.plot(Time,Data,'k')
@@ -497,9 +503,9 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     plt.savefig(os.path.join(newDirectory,'Persistance.png'))
     for i in NumberofChannels:
         if i == NumberofChannels[0]:
-            columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i)]
+            columnNames = ["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i),"Channel {} Peak Start Time".format(i)]
         else:
-            columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i)])
+            columnNames.extend(["Channel {} Rise Time".format(i),"Channel {} Pulse Height".format(i),"Channel {} Cummulative Charge".format(i),"Channel {} Pulse Time".format(i),"Channel {} RMS Noise".format(i),"Channel {} Baseline".format(i),"Channel {} Pedestle".format(i),"Channel {} Charge Pedestle".format(i),"Channel {} Peak Start Time".format(i)])
 
     if 1 == NumberofChannels[0]:
         Data = Data1
@@ -528,6 +534,7 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     PulseHeightColumns = [column for column in columnNames if "Pulse Height" in column]
     PulseandNoiseColumns = [column for column in columnNames if "Pulse Height" in column]
     ChargeColumns = [column for column in columnNames if "Cummulative Charge" in column]
+    StartTimes = [column for column in columnNames if "Start Time" in column]
     histPulseHieghts = Data.plot.hist(y = PulseandNoiseColumns,bins =1000,alpha = .3,subplots=False,title = 'Pulse Height Distributions',log=False,sharex = True)
     plt.xlabel('Pulse Height (mV)')
     plt.savefig(os.path.join(newDirectory,'Pulse_Height_Distribution.png'))
@@ -549,8 +556,10 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     amp = []
 
     n, bins = get_hist(histCharge,1000)
-
     bincenters = np.asarray([(bins[i]+bins[i-1])/2 for i in range(1,len(bins))],np.float32)
+    print([N for N in n])
+    if any(isinstance(el, list) for el in n):
+        print(n)
 
     peaks,properties = FindHistPeaks(n)
     #plt.plot(bincenters[peaks],n[peaks],'g+')
@@ -687,9 +696,24 @@ for i in tqdm(range(len(FileNames)),'Files',dynamic_ncols=True,unit = 'Files'):
     if len(FileNames) != 1:
         plt.close('all')
 #TOF Plotting
-#if len(NumberofChannels) >1:
-#    for i in NumberofChannels:
-#        Data["Channel {} Pulse Start".format(i)] = 
+plt.figure()
+if len(NumberofChannels) >1:
+        comb = combinations(NumberofChannels, 2)
+        for i in list(comb):
+            #print(i,Data['Channel {} Peak Start Time'.format(i[0])])
+            value1 = np.array(Data['Channel {} Peak Start Time'.format(i[0])].values)
+            #value1 = value1[np.isfinite(value1)]
+            value2 = np.array(Data['Channel {} Peak Start Time'.format(i[1])].values)
+            #value2 = value2[np.isfinite(value2)]
+            tofs = value1-value2
+            tofs = [x for x in tofs if abs(x - np.nanmean(tofs)) < 3*np.nanstd(tofs)]
+            tof = np.nanmean(tofs)
+            tofres = np.nanstd(tofs)
+            string = "TOF Between Inputs {} and {}: {}ns +/- {}ns".format(i[0],i[1],tof,tofres)
+            plt.hist(tofs,bins = 1000,alpha = .3,label = string)
+        plt.title('TOF Histogram')
+        plt.legend(loc='best')
+        plt.savefig(os.path.join(newDirectory,'TOF_Distributions.png'))
 if len(FileNames) == 1:
     plt.show()
     #sys.exit()
